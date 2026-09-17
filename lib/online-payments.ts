@@ -16,7 +16,7 @@ export async function infiniteWebhook(req:Request){
 }
 async function ppToken(s:Record<string,string>){const t=await fetchJSON(picpay+'/oauth2/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant_type:'client_credentials',client_id:s.ppClientId,client_secret:s.ppClientSecret})});if(!t.access_token)throw new HttpError(502,'Conexão PicPay indisponível');return t.access_token;}
 function payer(o:Order){const p=o.data.profile;if(!p.email||!cpfValid(p.cpf))throw new HttpError(422,'Informe CPF e e-mail para este pagamento.');return p;}
-export async function nativePix(o:Order,s:Record<string,string>){
+export async function nativePix(o:Order,s:Record<string,string>,origin?:string){
  if(o.data.pixCode){
   if((o.data.pixExpires||Infinity)>Date.now()&&o.payment_status!=='Expirado')return;
   await checkNativePayment(o);const raw=await db().prepare('SELECT * FROM orders WHERE id=?').bind(o.id).first<any>();
@@ -27,7 +27,7 @@ export async function nativePix(o:Order,s:Record<string,string>){
  }
  const p=payer(o);let code='',id='',expires=Date.now()+30*60000;
  if(o.data.paymentProvider==='mercadopago'){
- const r=await fetchJSON('https://api.mercadopago.com/v1/payments',{method:'POST',headers:{Authorization:'Bearer '+s.mpToken,'Content-Type':'application/json','X-Idempotency-Key':o.data.pixGeneration||o.id+'-pix'},body:JSON.stringify({transaction_amount:o.total/100,description:'Pedido #'+o.code,external_reference:o.id,payment_method_id:'pix',date_of_expiration:new Date(expires).toISOString(),notification_url:runtime.PUBLIC_URL+'/api/webhooks/mercadopago',payer:{email:p.email,first_name:p.name,identification:{type:'CPF',number:p.cpf.replace(/\D/g,'')}}})});
+ const r=await fetchJSON('https://api.mercadopago.com/v1/payments',{method:'POST',headers:{Authorization:'Bearer '+s.mpToken,'Content-Type':'application/json','X-Idempotency-Key':o.data.pixGeneration||o.id+'-pix'},body:JSON.stringify({transaction_amount:o.total/100,description:'Pedido #'+o.code,external_reference:o.id,payment_method_id:'pix',date_of_expiration:new Date(expires).toISOString(),notification_url:(runtime.PUBLIC_URL||origin)+'/api/webhooks/mercadopago',payer:{email:p.email,first_name:p.name,identification:{type:'CPF',number:p.cpf.replace(/\D/g,'')}}})});
  code=r.point_of_interaction?.transaction_data?.qr_code;id=String(r.id);if(r.status==='approved'&&r.currency_id==='BRL'&&Math.round(Number(r.transaction_amount)*100)===o.total)await setPaid(o.id,id);
  }else if(o.data.paymentProvider==='picpay'){
  const token=await ppToken(s);let r;try{r=await fetchJSON(picpay+'/charge/'+(o.data.ppChargeId||o.id),{headers:{Authorization:'Bearer '+token}})}catch{/* If the merchant id exists, creation below is rejected rather than duplicated. */}

@@ -69,7 +69,7 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
    db().prepare('INSERT INTO profiles(user_id,data,updated_at) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at').bind(u.userId,JSON.stringify(profile),now,orderId)
   ]);
   const created=await db().prepare('SELECT * FROM orders WHERE id=?').bind(orderId).first<any>();if(!created)throw new HttpError(409,'O orçamento mudou. Confira os valores novamente.');
-  let order:Order=unpackOrder(created);if(!manual)try{await checkoutLink(order);order=unpackOrder(await db().prepare('SELECT * FROM orders WHERE id=?').bind(orderId).first())}catch{/* The accepted order remains available for a payment retry. */}
+  let order:Order=unpackOrder(created);if(!manual)try{await checkoutLink(order, new URL(req.url).origin);order=unpackOrder(await db().prepare('SELECT * FROM orders WHERE id=?').bind(orderId).first())}catch{/* The accepted order remains available for a payment retry. */}
   await recordEvent(order,'Recebido','cliente');return json({order},201);
  }
  if(path==='admin/budgets'){

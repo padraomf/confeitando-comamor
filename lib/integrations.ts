@@ -6,12 +6,12 @@ import {queueWhatsApp} from './whatsapp-bridge';
 import { providerSecrets,paymentReady } from './payment-connect';
 import { db, secrets, settings, fetchJSON, HttpError, runtime, unpackOrder } from './server';
 import { addressText, money, type Order } from './commerce';
-export async function checkoutLink(order:Order){
+export async function checkoutLink(order:Order, reqOrigin?:string){
  if(order.checkout_url)return order.checkout_url;
  const provider=order.data.paymentProvider||'mercadopago';if(provider==='manual')throw new HttpError(422,'Este pedido tem pagamento direto à loja. Confira os dados em Meus pedidos.');const s=await providerSecrets(provider);if(!paymentReady(s,provider))throw new HttpError(422,'O pagamento online ainda não está disponível.');
- const origin=runtime.PUBLIC_URL;if(!origin)throw new HttpError(503,'Pagamento temporariamente indisponível.');
+ const origin=runtime.PUBLIC_URL||reqOrigin;if(!origin)throw new HttpError(503,'Pagamento temporariamente indisponível.');
  if(provider==='infinitepay')return infiniteCheckout(order,s,origin);
- if((provider==='mercadopago'||provider==='picpay')&&order.payment==='pix'){await nativePix(order,s);return '';}
+ if((provider==='mercadopago'||provider==='picpay')&&order.payment==='pix'){await nativePix(order,s,origin);return '';}
  if(provider==='mercadopago'&&order.payment==='card'&&s.mpPublicKey){await db().prepare("UPDATE orders SET data=json_set(data,'$.embeddedCard',json('true')) WHERE id=?").bind(order.id).run();return '';}
  if(provider==='pagbank')return pagbankCheckout(order,s.pbToken,origin);
  const payload={items:[...order.data.items.map(i=>({id:i.id,title:i.name,quantity:i.quantity,unit_price:i.price/100,currency_id:'BRL'})),...(order.data.fee?[{id:'delivery',title:'Taxa de entrega',quantity:1,unit_price:order.data.fee/100,currency_id:'BRL'}]:[])],external_reference:order.id,notification_url:origin+'/api/webhooks/mercadopago',back_urls:{success:origin+'/pedidos',failure:origin+'/pedidos',pending:origin+'/pedidos'},auto_return:'approved',payment_methods:{excluded_payment_types:order.payment==='card'?[{id:'ticket'},{id:'bank_transfer'},{id:'atm'}]:[{id:'credit_card'},{id:'debit_card'},{id:'ticket'},{id:'atm'}]},expires:true,expiration_date_to:new Date(Date.now()+86400000).toISOString()};
