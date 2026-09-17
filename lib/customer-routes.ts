@@ -1,0 +1,20 @@
+import {z} from 'zod';
+import {db,HttpError} from './server';
+import {customer,guest,shopper,token,digest,newSession,setSessionCookie,revoke,authLimit,rateLimit,passwordHash,passwordMatches,dummyHash} from './customer-auth';
+const emailSchema=z.string().trim().toLowerCase().email('Informe um e-mail válido').max(254);
+const passwordSchema=z.string().min(12,'Use uma senha com pelo menos 12 caracteres').max(128,'Use até 128 caracteres');
+const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+export async function customerRoute(req:Request,path:string,body:()=>Promise<any>):Promise<Response|null>{
+ if(path==='customer/session'&&req.method==='GET'){const user=await customer(req),visitor=user?null:await guest(req);return json({signedIn:!!user,guest:!!visitor,user:user?{name:user.displayName,email:user.email}:null})}
+ if(path==='customer/guest'&&req.method==='POST'){const existing=await guest(req);if(existing)return json({guest:true});await rateLimit(req,'guest:'+(req.headers.get('cf-connecting-ip')||'shared'),60);const value=await newSession('guest_'+crypto.randomUUID(),true);const response=json({guest:true});response.headers.set('Set-Cookie',setSessionCookie(value,true));return response;}
+ if(path==='customer/register'&&req.method==='POST'){
+ const input=z.object({name:z.string().trim().min(3,'Informe seu nome').max(120),email:emailSchema,password:passwordSchema}).parse(await body());await authLimit(req,input.email);const encoded=await passwordHash(input.password);const recoveryCode=token();const id='customer_'+crypto.randomUUID();
+ const result=await db().prepare('INSERT OR IGNORE INTO customers(id,email,name,password_hash,recovery_hash,created_at) VALUES(?,?,?,?,?,?)').bind(id,input.email,input.name,encoded,await digest(recoveryCode),Date.now()).run();if(!result.meta.changes)throw new HttpError(409,'Não foi possível criar a conta com esse e-mail. Tente entrar ou recuperar o acesso.');
+ const value=await newSession(id);const response=json({user:{name:input.name,email:input.email},recoveryCode},201);response.headers.set('Set-Cookie',setSessionCookie(value));return response;}
+ if(path==='customer/login'&&req.method==='POST'){
+ const input=z.object({email:emailSchema,password:z.string().min(1).max(128)}).parse(await body());await authLimit(req,input.email);const row=await db().prepare('SELECT id,name,email,password_hash FROM customers WHERE email=?').bind(input.email).first<any>();const valid=await passwordMatches(input.password,row?.password_hash||dummyHash);if(!row||!valid)throw new HttpError(401,'E-mail ou senha incorretos.');const value=await newSession(row.id);const response=json({user:{name:row.name,email:row.email}});response.headers.set('Set-Cookie',setSessionCookie(value));return response;}
+ if(path==='customer/logout'&&req.method==='POST'){await revoke(req);const response=json({ok:true});response.headers.append('Set-Cookie',setSessionCookie('',false,true));response.headers.append('Set-Cookie',setSessionCookie('',true,true));return response;}
+ if(path==='customer/recover'&&req.method==='POST'){
+ const input=z.object({email:emailSchema,recoveryCode:z.string().trim().regex(/^[a-f0-9]{64}$/,'Informe o código de recuperação guardado ao criar sua conta'),password:passwordSchema}).parse(await body());await authLimit(req,input.email);const row=await db().prepare('SELECT id,recovery_hash FROM customers WHERE email=?').bind(input.email).first<any>();if(!row||row.recovery_hash!==await digest(input.recoveryCode))throw new HttpError(401,'E-mail ou código de recuperação incorretos.');const replacement=token();const updated=await db().prepare('UPDATE customers SET password_hash=?,recovery_hash=? WHERE id=? AND recovery_hash=?').bind(await passwordHash(input.password),await digest(replacement),row.id,row.recovery_hash).run();if(!updated.meta.changes)throw new HttpError(409,'Código já utilizado.');await db().prepare('DELETE FROM customer_sessions WHERE actor_id=?').bind(row.id).run();return json({recoveryCode:replacement});}
+ return null;
+}

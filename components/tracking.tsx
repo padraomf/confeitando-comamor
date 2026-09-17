@@ -1,0 +1,6 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {Brand,Footer} from './brand';
+import {api,errorMessage} from '@/lib/client';
+import {money} from '@/lib/commerce';
+export default function Tracking({token}:{token:string}){const [o,setOrder]=useState<any>(null),[error,setError]=useState('');useEffect(()=>{let active=true;async function load(){try{const r=await api('tracking/'+token);if(active){setOrder(r);setError('')}}catch(e){if(active)setError(errorMessage(e))}}void load();const id=setInterval(()=>{if(document.visibilityState==='visible')void load()},15000);return()=>{active=false;clearInterval(id)}},[token]);return <><header className="store-header"><Brand/><a href="/catalogo">Ver cardápio</a></header><main className="customer-auth-wrap"><div className="customer-auth-card"><div className="eyebrow">SEU PEDIDO, COM CARINHO</div>{error?<p role="alert">{error}</p>:o?<><h1>Pedido #{o.code}</h1><p className="status-pill">{o.status}</p><p>{o.payment_status} · {o.delivery==='pickup'?'Retirada na confeitaria':'Entrega'}</p>{o.items.map((i:any)=><p key={i.id}>{i.quantity} × {i.name}</p>)}<strong>Total: {money(o.total)}</strong>{o.pickupCode&&<div className="pickup-code"><small>Código de retirada</small><strong>{o.pickupCode}</strong></div>}</>:<p>Consultando seu pedido…</p>}</div><Footer/></main></>}

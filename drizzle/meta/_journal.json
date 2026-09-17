@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789430633203,
+      "tag": "0000_lying_marvex",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789433216727,
+      "tag": "0001_mighty_morlun",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789435554563,
+      "tag": "0002_slow_black_tom",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789438514768,
+      "tag": "0003_shallow_tag",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789440893784,
+      "tag": "0004_chief_tombstone",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789621826767,
+      "tag": "0005_warm_infant_terrible",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789623116568,
+      "tag": "0006_sad_expediter",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789624541682,
+      "tag": "0007_reset_requested_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789625440920,
+      "tag": "0008_complete_store_workflows",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789628015845,
+      "tag": "0009_stock_and_payment_guards",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+'use client';
+import {useEffect,useId,useRef,useState} from 'react';
+import {api,errorMessage} from '@/lib/client';
+import {Button} from './ui/button';
+let sdkPromise:Promise<void>|null=null;
+function sdk(){if((window as any).MercadoPago)return Promise.resolve();if(!sdkPromise)sdkPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://sdk.mercadopago.com/js/v2';script.async=true;script.onload=()=>resolve();script.onerror=()=>{script.remove();sdkPromise=null;reject(new Error('Não foi possível carregar o pagamento. Confira a conexão e tente novamente.'))};document.head.appendChild(script)});return sdkPromise}
+export function CardPayment({orderId,onPaid}:{orderId:string;onPaid:()=>void}){
+ const id='card-'+useId().replace(/[^a-zA-Z0-9]/g,''),[error,setError]=useState(''),[status,setStatus]=useState('Carregando pagamento seguro…'),[revision,setRevision]=useState(0),controller=useRef<any>(null),paidCallback=useRef(onPaid);paidCallback.current=onPaid;
+ useEffect(()=>{let active=true,ctrl:any,interval:ReturnType<typeof setInterval>;setError('');setStatus('Carregando pagamento seguro…');
+ async function start(){try{const [config]=await Promise.all([api('orders/'+orderId+'/card-config'),sdk()]);if(!active)return;if(config.paid||config.payment?.status==='approved'){paidCallback.current();return}
+ const mp=new (window as any).MercadoPago(config.publicKey,{locale:'pt-BR'}),bricks=mp.bricks();
+ async function screen(p:any){if(!active)return;await ctrl?.unmount();if(!active)return;ctrl=await bricks.create('statusScreen',id,{initialization:{paymentId:p.paymentId,...(p.challenge?{additionalInfo:p.challenge}:{})},callbacks:{onReady:()=>{if(active)setStatus('Confira a confirmação do seu banco.')},onError:()=>{if(active)setError('Não foi possível exibir a confirmação. Atualize o pagamento.')}}});controller.current=ctrl;
+ interval=setInterval(async()=>{if(!active||document.visibilityState!=='visible')return;try{const r=await api('orders/'+orderId+'/check',{method:'POST',body:'{}'});if(active&&r.order.payment_status==='Pago')paidCallback.current()}catch{/* Customer can explicitly refresh. */}},10000);
+ }
+ if(config.payment&&!['rejected','cancelled'].includes(config.payment.status)){await screen(config.payment);return}
+ if(config.uncertain){setStatus('Conferindo a tentativa anterior com o banco. Aguarde a confirmação antes de tentar outro cartão.');return}
+ ctrl=await bricks.create('cardPayment',id,{initialization:{amount:config.amount,payer:config.payer},customization:{paymentMethods:{maxInstallments:1}},callbacks:{onReady:()=>{if(active)setStatus('')},onError:()=>{if(active)setError('Confira os campos do cartão. Se o formulário não carregar, tente novamente.')},onSubmit:async(form:any)=>{try{setError('');const payload={token:form.token,installments:Number(form.installments),payment_method_id:form.payment_method_id,issuer_id:form.issuer_id,payer:{email:form.payer.email,identification:form.payer.identification}},p=await api('orders/'+orderId+'/card',{method:'POST',body:JSON.stringify(payload)});if(!active)return;if(p.status==='approved'){paidCallback.current();return}if(['rejected','cancelled'].includes(p.status)){setError('Pagamento recusado. Confira os dados ou tente outro cartão.');setRevision(v=>v+1);return}await screen(p)}catch(e){if(active)setError(errorMessage(e));throw e}}}});controller.current=ctrl;if(!active)await ctrl.unmount();
+ }catch(e){if(active){setError(errorMessage(e));setStatus('')}}}void start();return()=>{active=false;clearInterval(interval);void ctrl?.unmount();controller.current=null}},[orderId,revision,id]);
+ return <section className="card-brick"><h3>Pagar com cartão</h3><p className="small-muted">Os dados do cartão são protegidos pelo Mercado Pago. Pagamento à vista.</p>{status&&<p role="status">{status}</p>}<div id={id}/>{error&&<p role="alert" className="error-text">{error}</p>}<Button variant="outline" onClick={()=>setRevision(v=>v+1)}>Atualizar pagamento</Button></section>;
+}

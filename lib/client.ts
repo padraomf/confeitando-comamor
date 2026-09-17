@@ -1,0 +1,2 @@
+export async function api(path:string,options:RequestInit={}){const r=await fetch('/api/'+path,{...options,headers:{...(options.body&&!(options.body instanceof FormData)?{'Content-Type':'application/json'}:{}),...options.headers},cache:'no-store'});const data:any=await r.json();if(!r.ok)throw new Error(data.error??'Não foi possível continuar.');return data}
+export const errorMessage=(e:unknown)=>e instanceof Error?e.message:'Não foi possível continuar.';

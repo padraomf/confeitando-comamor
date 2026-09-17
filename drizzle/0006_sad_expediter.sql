@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `sold_out` integer DEFAULT 0 NOT NULL;

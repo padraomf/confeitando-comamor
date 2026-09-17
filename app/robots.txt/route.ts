@@ -1,0 +1,2 @@
+import {runtime} from '@/lib/server';
+export async function GET(){return new Response(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /painel\nDisallow: /conta\nDisallow: /pedidos\nDisallow: /acompanhar/\nDisallow: /acompanhar-pedido/\nDisallow: /minha-conta\nDisallow: /meus-pedidos\nDisallow: /finalizar-pedido\nDisallow: /sacola\nSitemap: ${runtime.PUBLIC_URL||''}/sitemap.xml\n`,{headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'public,max-age=3600'}})}
