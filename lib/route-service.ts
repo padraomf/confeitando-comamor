@@ -31,7 +31,7 @@ export async function routeQuote(a:Address){
   if(config.lat===null||config.lng===null)throw new HttpError(422,'A localização da confeitaria ainda não foi configurada.');
   if(!a.location?.confirmed)throw new HttpError(422,'Confirme o ponto de entrega.');
   
-  const r=await fetchJSON(`https://router.project-osrm.org/route/v1/driving/${config.lng},${config.lat};${a.location.lng},${a.location.lat}?overview=false`);
+  const r=await fetchJSON(`https://router.project-osrm.org/route/v1/driving/${config.lng},${config.lat};${a.location.lng},${a.location.lat}?overview=false`, {headers: HEADERS});
   const distance=r.routes?.[0]?.distance;
   if(!Number.isFinite(distance)||distance<0)throw new HttpError(422,'Não encontramos uma rota. Confira o ponto no mapa.');
   if(distance>config.maxKm*1000)throw new HttpError(422,`Endereço fora da área de entrega de ${config.maxKm} km.`);
