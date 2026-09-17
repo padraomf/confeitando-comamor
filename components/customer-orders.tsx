@@ -23,3 +23,4 @@ export default function CustomerOrders({embedded}:{embedded?:boolean}){const [se
 
  if (embedded) return <div className="orders-page">{content}{dialogs}</div>;
  return <><header className="store-header"><Brand/><nav><a href="/">Cardápio</a><a href="/conta">Área do cliente</a></nav><a className="text-link" href="/">Pedir um doce <ArrowUpRight size={16}/></a></header><main className="store-main orders-page">{content}<Footer/></main>{dialogs}</>
+}
