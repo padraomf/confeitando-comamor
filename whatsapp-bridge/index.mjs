@@ -9,8 +9,8 @@ import {deliver} from './delivery.mjs';
 
 const {Client,LocalAuth}=whatsapp;
 const directory=process.env.CCA_BRIDGE_DATA_DIR||path.join(path.dirname(fileURLToPath(import.meta.url)),'data');
-const config=readJSON(path.join(directory,'config.json'));
-if(!config?.token||!config?.site){console.error('Primeiro execute npm run setup e vincule este computador no painel.');process.exit(1)}
+const config=readJSON(path.join(directory,'config.json')) || { token: process.env.CCA_TOKEN, site: process.env.CCA_SITE };
+if(!config?.token||!config?.site){console.error('Configure CCA_TOKEN e CCA_SITE nas variáveis de ambiente, ou execute npm run setup localmente.');process.exit(1)}
 const site=new URL(config.site);
 const runner=randomUUID(),ledger=journal(path.join(directory,'journal'));
 const connection=new Connection(()=>new Client({
