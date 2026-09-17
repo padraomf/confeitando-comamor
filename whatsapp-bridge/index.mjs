@@ -2,6 +2,7 @@ import whatsapp from 'whatsapp-web.js';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
+import http from 'node:http';
 import {readJSON,journal} from './storage.mjs';
 import {Connection} from './connection.mjs';
 import {deliver} from './delivery.mjs';
@@ -39,5 +40,15 @@ async function tick(){
 }
 async function shutdown(){if(stopping)return;stopping=true;await connection.stop(false);process.exit(0)}
 process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);
+
+const port = process.env.PORT || 8080;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('WhatsApp Bridge is running!\n');
+});
+server.listen(port, () => {
+  console.log(`Servidor HTTP de verificação rodando na porta ${port}`);
+});
+
 console.log('Conector em execução. Abra Conexões no painel para conectar pelo QR code.');
 while(!stopping){await tick();await new Promise(resolve=>setTimeout(resolve,Math.min(30000,5000*Math.max(1,Math.min(networkFailures,6)))))}
