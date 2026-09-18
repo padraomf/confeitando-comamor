@@ -24,27 +24,27 @@ export async function customerRoute(req:Request,path:string,body:()=>Promise<any
    if(data.address.district)parts.push(data.address.district);
    maskedAddress=parts.join(', ')||null;
    
-   if (u && data.address.location?.confirmed) {
+   if (data.address.location?.confirmed) {
      const {routeQuote} = await import('./route-service');
      try {
         const {fee,distance} = await routeQuote(data.address);
         const id=crypto.randomUUID(),expires=Date.now()+15*60000;
-        await db().prepare('INSERT INTO quotes(id,user_id,address,distance,fee,expires) VALUES(?,?,?,?,?,?)').bind(id,u.userId,JSON.stringify(data.address),distance,fee,expires).run();
+        await db().prepare('INSERT INTO quotes(id,user_id,address,distance,fee,expires) VALUES(?,?,?,?,?,?)').bind(id,u?.userId,JSON.stringify(data.address),distance,fee,expires).run();
         quote = {id,distance,fee,expires,address:data.address};
      } catch {}
    }
  }
-  const maskedEmail = data.email ? data.email.replace(/^(.{2}).*(@.*)$/, '$1***$2') : '';
-  let maskedCpf = '';
+  const email = data.email || '';
+  let formattedCpf = '';
   if (data.cpf) {
     const cleanCpf = data.cpf.replace(/\D/g, '');
     if (cleanCpf.length === 11) {
-      maskedCpf = `${cleanCpf.slice(0, 3)}.***.***-${cleanCpf.slice(9, 11)}`;
+      formattedCpf = `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9, 11)}`;
     } else {
-      maskedCpf = data.cpf.replace(/^(.{3}).*(.{2})$/, '$1***$2');
+      formattedCpf = data.cpf;
     }
   }
-  return json({exists:true,name:data.name,maskedAddress,quote,email:maskedEmail,cpf:maskedCpf});}
+  return json({exists:true,name:data.name,maskedAddress,quote,email,cpf:formattedCpf});}
  if(path==='customer/register'&&req.method==='POST'){
  const input=z.object({name:z.string().trim().min(3,'Informe seu nome').max(120),email:emailOrPhoneSchema,password:passwordSchema}).parse(await body());await authLimit(req,input.email);const encoded=await passwordHash(input.password);const recoveryCode=token();const id='customer_'+crypto.randomUUID();
  const result=await db().prepare('INSERT OR IGNORE INTO customers(id,email,name,password_hash,recovery_hash,created_at) VALUES(?,?,?,?,?,?)').bind(id,input.email,input.name,encoded,await digest(recoveryCode),Date.now()).run();if(!result.meta.changes)throw new HttpError(409,'Não foi possível criar a conta. Tente entrar ou recuperar o acesso.');
