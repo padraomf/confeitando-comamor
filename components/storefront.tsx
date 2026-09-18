@@ -501,7 +501,7 @@ export default function Storefront({
       toast.error("Calcule o frete para continuar.");
       return;
     }
-    if (!signedIn && !customerExists) {
+    if (!signedIn) {
       setStep(2); // Go to Profile
       return;
     }
@@ -513,25 +513,28 @@ export default function Storefront({
       toast.error(r.error.issues[0].message);
       return;
     }
-    if (!profile.password || profile.password.length < 6) {
-      toast.error("Crie uma senha de pelo menos 6 caracteres.");
-      return;
-    }
     setProfile(r.data);
-    setBusy(true);
-    try {
-      await api("customer/register", {
-        method: "POST",
-        body: JSON.stringify({ name: profile.name, email: profile.email || profile.phone, password: profile.password })
-      });
-      await api("profile", { method: "PUT", body: JSON.stringify({ ...r.data, ...(delivery === "delivery" ? { address } : { address: undefined }) }) });
-      setSignedIn(true);
-      setStep(3);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setBusy(false);
+    
+    if (!customerExists) {
+      setBusy(true);
+      try {
+        if (profile.password && profile.password.length >= 6) {
+          await api("customer/register", {
+            method: "POST",
+            body: JSON.stringify({ name: profile.name, email: profile.email || profile.phone, password: profile.password })
+          });
+          setSignedIn(true);
+        }
+      } catch (e) {
+        toast.error(errorMessage(e));
+        setBusy(false);
+        return;
+      } finally {
+        setBusy(false);
+      }
     }
+    
+    setStep(3);
   }
   async function placeOrder() {
     if (busy) return;
@@ -1108,21 +1111,6 @@ export default function Storefront({
                           }}
                           placeholder="(00) 00000-0000"
                         />
-                        {customerExists && (
-                          <div style={{ marginTop: '12px' }}>
-                            <Label htmlFor="customer-password">Sua senha</Label>
-                            <Input
-                              id="customer-password"
-                              type="password"
-                              value={profile.password || ""}
-                              onChange={(e) => setProfile((p) => ({ ...p, password: e.target.value }))}
-                              placeholder="Digite sua senha para entrar"
-                            />
-                            <a href="/conta" target="_blank" rel="noopener noreferrer" className="small-muted" style={{ display: 'inline-block', marginTop: '8px', textDecoration: 'underline' }}>
-                              Esqueci minha senha
-                            </a>
-                          </div>
-                        )}
                       </div>
                     )}
                   </>
@@ -1193,20 +1181,22 @@ export default function Storefront({
                         placeholder="000.000.000-00"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="customer-password">
-                        Crie uma senha <span className="muted">(para acessar depois)</span>
-                      </Label>
-                      <Input
-                        id="customer-password"
-                        type="password"
-                        value={profile.password || ""}
-                        onChange={(e) =>
-                          setProfile((p) => ({ ...p, password: e.target.value }))
-                        }
-                        placeholder="Mínimo 6 caracteres"
-                      />
-                    </div>
+                    {!customerExists && (
+                      <div>
+                        <Label htmlFor="customer-password">
+                          Crie uma senha <span className="muted">(opcional)</span>
+                        </Label>
+                        <Input
+                          id="customer-password"
+                          type="password"
+                          value={profile.password || ""}
+                          onChange={(e) =>
+                            setProfile((p) => ({ ...p, password: e.target.value }))
+                          }
+                          placeholder="Mínimo 6 caracteres"
+                        />
+                      </div>
+                    )}
                     <label className="consent">
                       <Checkbox
                         checked={profile.whatsappConsent}
