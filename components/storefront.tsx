@@ -457,34 +457,19 @@ export default function Storefront({
       }
       setBusy(true);
       try {
-        if (!customerExists) {
-          const r = await api("customer/lookup-phone", {
-            method: "POST",
-            body: JSON.stringify({ phone: profile.phone }),
-          });
-          if (r.exists) {
-            setCustomerExists(true);
-            setProfile((p) => ({ ...p, name: r.name }));
-            if (r.quote) {
-              setQuote(r.quote);
-              setAddress(r.quote.address);
-            }
-            setBusy(false);
-            return;
-          } else {
-            setCustomerExists(false);
+        const r = await api("customer/lookup-phone", {
+          method: "POST",
+          body: JSON.stringify({ phone: profile.phone }),
+        });
+        if (r.exists) {
+          setCustomerExists(true);
+          setProfile((p) => ({ ...p, name: r.name, email: r.email || "", cpf: r.cpf || "" }));
+          if (r.quote) {
+            setQuote(r.quote);
+            setAddress(r.quote.address);
           }
         } else {
-          if (!profile.password) {
-            toast.error("Informe sua senha para entrar.");
-            setBusy(false);
-            return;
-          }
-          await api("customer/login", {
-            method: "POST",
-            body: JSON.stringify({ email: profile.phone.replace(/\D/g, ""), password: profile.password })
-          });
-          setSignedIn(true);
+          setCustomerExists(false);
         }
         setStep(1); // Go to Delivery
       } catch (e) {
