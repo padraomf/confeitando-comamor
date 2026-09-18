@@ -506,7 +506,7 @@ export default function Storefront({
         if (profile.password && profile.password.length >= 6) {
           await api("customer/register", {
             method: "POST",
-            body: JSON.stringify({ name: profile.name, email: profile.email || profile.phone, password: profile.password })
+            body: JSON.stringify({ ...profile, address: delivery === "delivery" ? address : undefined, email: profile.email || profile.phone })
           });
           setSignedIn(true);
         }
