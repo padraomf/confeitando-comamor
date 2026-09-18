@@ -34,7 +34,17 @@ export async function customerRoute(req:Request,path:string,body:()=>Promise<any
      } catch {}
    }
  }
- return json({exists:true,name:data.name,maskedAddress,quote});}
+  const maskedEmail = data.email ? data.email.replace(/^(.{2}).*(@.*)$/, '$1***$2') : '';
+  let maskedCpf = '';
+  if (data.cpf) {
+    const cleanCpf = data.cpf.replace(/\D/g, '');
+    if (cleanCpf.length === 11) {
+      maskedCpf = `${cleanCpf.slice(0, 3)}.***.***-${cleanCpf.slice(9, 11)}`;
+    } else {
+      maskedCpf = data.cpf.replace(/^(.{3}).*(.{2})$/, '$1***$2');
+    }
+  }
+  return json({exists:true,name:data.name,maskedAddress,quote,email:maskedEmail,cpf:maskedCpf});}
  if(path==='customer/register'&&req.method==='POST'){
  const input=z.object({name:z.string().trim().min(3,'Informe seu nome').max(120),email:emailOrPhoneSchema,password:passwordSchema}).parse(await body());await authLimit(req,input.email);const encoded=await passwordHash(input.password);const recoveryCode=token();const id='customer_'+crypto.randomUUID();
  const result=await db().prepare('INSERT OR IGNORE INTO customers(id,email,name,password_hash,recovery_hash,created_at) VALUES(?,?,?,?,?,?)').bind(id,input.email,input.name,encoded,await digest(recoveryCode),Date.now()).run();if(!result.meta.changes)throw new HttpError(409,'Não foi possível criar a conta. Tente entrar ou recuperar o acesso.');
