@@ -533,7 +533,7 @@ export default function Storefront({
       const r = await api("orders", {
         method: "POST",
         body: JSON.stringify({
-          guest: false,
+          guest: !signedIn,
           requestId,
           expectedTotal: total,
           items: items.map((i) => ({
