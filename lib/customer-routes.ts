@@ -44,7 +44,7 @@ export async function customerRoute(req:Request,path:string,body:()=>Promise<any
       formattedCpf = data.cpf;
     }
   }
-  return json({exists:true,name:data.name,maskedAddress,quote,email,cpf:formattedCpf});}
+  return json({exists:true,name:data.name,maskedAddress,quote,email,cpf:formattedCpf,address:data.address});}
  if(path==='customer/register'&&req.method==='POST'){
  const input=z.object({name:z.string().trim().min(3,'Informe seu nome').max(120),email:emailOrPhoneSchema,password:passwordSchema,phone:z.string().optional(),cpf:z.string().optional(),whatsappConsent:z.boolean().optional(),address:z.any().optional()}).parse(await body());await authLimit(req,input.email);const encoded=await passwordHash(input.password);const recoveryCode=token();const id='customer_'+crypto.randomUUID();
  const result=await db().prepare('INSERT OR IGNORE INTO customers(id,email,name,password_hash,recovery_hash,created_at) VALUES(?,?,?,?,?,?)').bind(id,input.email,input.name,encoded,await digest(recoveryCode),Date.now()).run();if(!result.meta.changes)throw new HttpError(409,'Não foi possível criar a conta. Tente entrar ou recuperar o acesso.');

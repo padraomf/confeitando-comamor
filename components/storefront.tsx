@@ -464,6 +464,9 @@ export default function Storefront({
         if (r.exists) {
           setCustomerExists(true);
           setProfile((p) => ({ ...p, name: r.name, email: r.email || "", cpf: r.cpf || "" }));
+          if (r.address) {
+            setAddress(r.address);
+          }
           if (r.quote) {
             setQuote(r.quote);
             setAddress(r.quote.address);
