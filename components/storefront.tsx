@@ -503,7 +503,7 @@ export default function Storefront({
     if (!customerExists) {
       setBusy(true);
       try {
-        if (profile.password && profile.password.length >= 6) {
+        if (profile.password && profile.password.length >= 12) {
           await api("customer/register", {
             method: "POST",
             body: JSON.stringify({ name: profile.name, email: profile.email || profile.phone, password: profile.password })
@@ -1178,7 +1178,7 @@ export default function Storefront({
                           onChange={(e) =>
                             setProfile((p) => ({ ...p, password: e.target.value }))
                           }
-                          placeholder="Mínimo 6 caracteres"
+                          placeholder="Mínimo 12 caracteres"
                         />
                       </div>
                     )}
