@@ -60,6 +60,14 @@ import { PrintOrder } from "./print-order";
 const LazyAddressFields = lazy(() =>
   import("./address-fields").then((m) => ({ default: m.AddressFields })),
 );
+function formatPhone(value: string) {
+  const v = value.replace(/\D/g, "");
+  if (!v) return "";
+  if (v.length <= 2) return `(${v}`;
+  if (v.length <= 6) return `(${v.slice(0, 2)}) ${v.slice(2)}`;
+  if (v.length <= 10) return `(${v.slice(0, 2)}) ${v.slice(2, 6)}-${v.slice(6)}`;
+  return `(${v.slice(0, 2)}) ${v.slice(2, 7)}-${v.slice(7, 11)}`;
+}
 function AddressFields(props: React.ComponentProps<typeof LazyAddressFields>) {
   return (
     <Suspense fallback={<p>Carregando endereço…</p>}>
@@ -449,19 +457,34 @@ export default function Storefront({
       }
       setBusy(true);
       try {
-        const r = await api("customer/lookup-phone", {
-          method: "POST",
-          body: JSON.stringify({ phone: profile.phone }),
-        });
-        if (r.exists) {
-          setCustomerExists(true);
-          setProfile((p) => ({ ...p, name: r.name }));
-          if (r.quote) {
-            setQuote(r.quote);
-            setAddress(r.quote.address);
+        if (!customerExists) {
+          const r = await api("customer/lookup-phone", {
+            method: "POST",
+            body: JSON.stringify({ phone: profile.phone }),
+          });
+          if (r.exists) {
+            setCustomerExists(true);
+            setProfile((p) => ({ ...p, name: r.name }));
+            if (r.quote) {
+              setQuote(r.quote);
+              setAddress(r.quote.address);
+            }
+            setBusy(false);
+            return;
+          } else {
+            setCustomerExists(false);
           }
         } else {
-          setCustomerExists(false);
+          if (!profile.password) {
+            toast.error("Informe sua senha para entrar.");
+            setBusy(false);
+            return;
+          }
+          await api("customer/login", {
+            method: "POST",
+            body: JSON.stringify({ email: profile.phone.replace(/\D/g, ""), password: profile.password })
+          });
+          setSignedIn(true);
         }
         setStep(1); // Go to Delivery
       } catch (e) {
@@ -1070,20 +1093,36 @@ export default function Storefront({
                     {count > 0 && !signedIn && (
                       <div className="guest-choice form-stack">
                         <p>
-                          Informe seu telefone para continuar.
+                          {customerExists ? `Bem-vindo de volta, ${profile.name.split(' ')[0]}!` : "Informe seu telefone para continuar."}
                         </p>
                         <Label htmlFor="customer-phone">Telefone com DDD</Label>
                         <Input
                           id="customer-phone"
                           autoComplete="tel-national"
                           inputMode="tel"
-                          maxLength={16}
+                          maxLength={15}
                           value={profile.phone}
-                          onChange={(e) =>
-                            setProfile((p) => ({ ...p, phone: e.target.value }))
-                          }
+                          onChange={(e) => {
+                            setProfile((p) => ({ ...p, phone: formatPhone(e.target.value) }));
+                            if (customerExists) setCustomerExists(false);
+                          }}
                           placeholder="(00) 00000-0000"
                         />
+                        {customerExists && (
+                          <div style={{ marginTop: '12px' }}>
+                            <Label htmlFor="customer-password">Sua senha</Label>
+                            <Input
+                              id="customer-password"
+                              type="password"
+                              value={profile.password || ""}
+                              onChange={(e) => setProfile((p) => ({ ...p, password: e.target.value }))}
+                              placeholder="Digite sua senha para entrar"
+                            />
+                            <a href="/conta" target="_blank" rel="noopener noreferrer" className="small-muted" style={{ display: 'inline-block', marginTop: '8px', textDecoration: 'underline' }}>
+                              Esqueci minha senha
+                            </a>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -1116,10 +1155,10 @@ export default function Storefront({
                         id="customer-phone"
                         autoComplete="tel-national"
                         inputMode="tel"
-                        maxLength={16}
+                        maxLength={15}
                         value={profile.phone}
                         onChange={(e) =>
-                          setProfile((p) => ({ ...p, phone: e.target.value }))
+                          setProfile((p) => ({ ...p, phone: formatPhone(e.target.value) }))
                         }
                         placeholder="(00) 00000-0000"
                       />
