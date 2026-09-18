@@ -12,8 +12,9 @@ export async function customerRoute(req:Request,path:string,body:()=>Promise<any
  const u=await shopper(req).catch(()=>null);
  const input=z.object({phone:z.string().transform(s=>s.replace(/\D/g,'')).refine(s=>/^\d{10,11}$/.test(s),'Telefone inválido')}).parse(await body());
  await rateLimit(req,'lookup:'+(req.headers.get('cf-connecting-ip')||'shared'),20);
- const profile=await db().prepare("SELECT data FROM profiles WHERE json_extract(data,'$.phone')=?").bind(input.phone).first<any>();
- if(!profile)return json({exists:false});
+  const cleanPhoneSQL = `REPLACE(REPLACE(REPLACE(REPLACE(json_extract(data,'$.phone'), ' ', ''), '-', ''), '(', ''), ')', '')`;
+  const profile=await db().prepare(`SELECT data FROM profiles WHERE ${cleanPhoneSQL}=?`).bind(input.phone).first<any>();
+  if(!profile)return json({exists:false});
  const data=JSON.parse(profile.data);
  let maskedAddress=null;
  let quote=null;
@@ -46,7 +47,8 @@ export async function customerRoute(req:Request,path:string,body:()=>Promise<any
  const input=z.object({email:emailOrPhoneSchema,password:z.string().min(1).max(128)}).parse({...rawInput,email:normalized});await authLimit(req,input.email);
  let row;
  if(isPhone){
-   const profile=await db().prepare("SELECT user_id FROM profiles WHERE json_extract(data,'$.phone')=?").bind(normalized).first<any>();
+    const cleanPhoneSQL = `REPLACE(REPLACE(REPLACE(REPLACE(json_extract(data,'$.phone'), ' ', ''), '-', ''), '(', ''), ')', '')`;
+    const profile=await db().prepare(`SELECT user_id FROM profiles WHERE ${cleanPhoneSQL}=?`).bind(normalized).first<any>();
    if(profile) row = await db().prepare('SELECT id,name,email,password_hash FROM customers WHERE id=?').bind(profile.user_id).first<any>();
    if(!row) row = await db().prepare('SELECT id,name,email,password_hash FROM customers WHERE email=?').bind(normalized).first<any>();
  } else {
