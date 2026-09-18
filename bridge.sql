@@ -1,0 +1,1 @@
+UPDATE whatsapp_bridge SET token_hash='35a36fcb00f1c0f24f7f55237b8d7697d2db8999d31740a0922bec34e09309d9', desired='disconnected', state='offline', revision=revision+1, qr='', phone='', last_seen=0, runner='', lease_until=0 WHERE id='store';
