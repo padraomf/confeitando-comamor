@@ -3,7 +3,7 @@ import {db,HttpError} from './server';
 import {customer,guest,shopper,token,digest,newSession,setSessionCookie,revoke,authLimit,rateLimit,passwordHash,passwordMatches,dummyHash} from './customer-auth';
 const emailSchema=z.string().trim().toLowerCase().email('Informe um e-mail válido').max(254);
 const emailOrPhoneSchema=z.string().trim().toLowerCase().max(254);
-const passwordSchema=z.string().min(12,'Use uma senha com pelo menos 12 caracteres').max(128,'Use até 128 caracteres');
+const passwordSchema=z.string().min(6,'Use uma senha com pelo menos 6 caracteres').max(128,'Use até 128 caracteres');
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function customerRoute(req:Request,path:string,body:()=>Promise<any>):Promise<Response|null>{
  if(path==='customer/session'&&req.method==='GET'){const user=await customer(req),visitor=user?null:await guest(req);return json({signedIn:!!user,guest:!!visitor,user:user?{name:user.displayName,email:user.email}:null})}
