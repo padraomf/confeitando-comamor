@@ -470,11 +470,15 @@ export default function Storefront({
           if (r.quote) {
             setQuote(r.quote);
             setAddress(r.quote.address);
+            setDelivery("delivery");
+          } else {
+            setDelivery("pickup");
           }
+          setStep(2); // Jump to Fast Track
         } else {
           setCustomerExists(false);
+          setStep(1); // Normal flow
         }
-        setStep(1); // Go to Delivery
       } catch (e) {
         toast.error(errorMessage(e));
       } finally {
@@ -1105,14 +1109,37 @@ export default function Storefront({
                 )}
                 {step === 2 && (
                   <div className="form-stack">
-                    <div className="step-heading">
-                      <h3>Vamos nos conhecer?</h3>
-                      <p>
-                        {signedIn
-                          ? "Seus dados ficam salvos para os próximos pedidos."
-                          : "Informe os dados necessários para este pedido."}
-                      </p>
-                    </div>
+                    {customerExists && !signedIn ? (
+                      <div className="fast-track form-stack">
+                        <div className="step-heading">
+                          <h3>Bem-vindo de volta!</h3>
+                          <p>Encontramos o seu cadastro.</p>
+                        </div>
+                        <div className="masked-data" style={{ padding: '1rem', background: 'var(--surface-sunken)', borderRadius: '8px' }}>
+                          <p style={{marginBottom: '0.5rem'}}><strong>Nome:</strong> {profile.name ? profile.name.split(' ').map(n => n.charAt(0) + '*'.repeat(Math.max(2, n.length - 1))).join(' ') : ''}</p>
+                          <p style={{marginBottom: '0.5rem'}}><strong>Entrega:</strong> {delivery === 'delivery' && quote ? `${address.street?.slice(0, 3)}***, ${address.district}` : 'Retirada na confeitaria'}</p>
+                          {delivery === 'delivery' && quote && <p style={{margin: 0}}><strong>Frete:</strong> {money(quote.fee)}</p>}
+                        </div>
+                        <p className="small-muted">Deseja continuar com estes dados para finalizar o pedido?</p>
+                        <Button onClick={() => setStep(3)}>Sim, continuar para pagamento</Button>
+                        <Button variant="outline" onClick={() => {
+                          setCustomerExists(false);
+                          setProfile({name: "", phone: profile.phone, email: "", cpf: "", whatsappConsent: false});
+                          setAddress(emptyAddress);
+                          setQuote(null);
+                          setStep(1);
+                        }}>Não, alterar dados</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="step-heading">
+                          <h3>Vamos nos conhecer?</h3>
+                          <p>
+                            {signedIn
+                              ? "Seus dados ficam salvos para os próximos pedidos."
+                              : "Informe os dados necessários para este pedido."}
+                          </p>
+                        </div>
                     <div>
                       <Label htmlFor="customer-name">Nome completo</Label>
                       <Input
@@ -1205,9 +1232,11 @@ export default function Storefront({
                       contato e realizar a entrega. Seus dados de contato não
                       aparecem no catálogo.
                     </p>
-                  </div>
+                  </>
                 )}
-                {step === 1 && (
+              </div>
+            )}
+            {step === 1 && (
                   <div className="form-stack">
                     <div className="step-heading">
                       <h3>Como prefere receber?</h3>
@@ -1480,7 +1509,7 @@ export default function Storefront({
                     >
                       Continuar <ArrowRight size={17} />
                     </Button>
-                  ) : step === 2 ? (
+                  ) : step === 2 && !(customerExists && !signedIn) ? (
                     <Button
                       className="primary-action"
                       disabled={busy}
