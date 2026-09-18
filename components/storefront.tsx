@@ -1016,18 +1016,7 @@ export default function Storefront({
                                 item.
                               </p>
                             )}
-                            <Input
-                              aria-label={"Observação para " + p.name}
-                              placeholder="Observação deste doce (opcional)"
-                              maxLength={200}
-                              value={itemNotes[p.id] || ""}
-                              onChange={(e) =>
-                                setItemNotes((n) => ({
-                                  ...n,
-                                  [p.id]: e.target.value,
-                                }))
-                              }
-                            />
+
                             <div className="quantity">
                               <button
                                 aria-label={"Diminuir " + p.name}
@@ -1066,13 +1055,12 @@ export default function Storefront({
                     )}
                     {count > 0 && (
                       <div className="order-note">
-                        <Button variant="outline" onClick={() => load()}>
-                          Atualizar preços e disponibilidade
-                        </Button>
+
                         <Label htmlFor="note">Alguma observação?</Label>
                         <Textarea
                           id="note"
                           maxLength={500}
+                          rows={2}
                           placeholder="Conte aqui algum detalhe do seu pedido…"
                           value={note}
                           onChange={(e) => setNote(e.target.value)}
