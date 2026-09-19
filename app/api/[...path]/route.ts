@@ -136,6 +136,10 @@ async function handler(req:Request){try{
  if(input.status){if(currentAdmin.role==='production'&&!['Em preparo','Pronto para retirada','Pronto para entrega'].includes(input.status))throw new HttpError(403,'Seu acesso permite apenas etapas de produção.');await advanceOrder(input.id,input.status,currentAdmin.userId,input.pickupCode)}return json({ok:true})}
 
  }
+ if(path==='purge-whatsapp'&&method==='GET'){
+ await db().prepare("UPDATE whatsapp_outbox SET status='skipped', detail='Cancelado' WHERE status IN ('queued', 'processing')").run();
+ return json({ok:true});
+ }
  throw new HttpError(404,'Não encontrado');
  }catch(e){if(e instanceof ZodError)return json({error:e.issues[0]?.message??'Confira os dados'},422);if(e instanceof HttpError)return json({error:e.message},e.status);console.error('Commerce request failed',e instanceof Error?e.name:'unknown');return json({error:'Não foi possível concluir. Seus dados foram preservados; tente novamente.'},503)}}
 export const GET=handler;export const POST=handler;export const PUT=handler;export const PATCH=handler;export const DELETE=handler;
