@@ -85,7 +85,7 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
    const detail=raw?.status==='Cancelado'?'Pedido cancelado.':'Aviso expirado (mais de 10 minutos na fila). O próximo aviso conterá a situação atualizada.';await db().prepare("UPDATE whatsapp_outbox SET status='skipped',updated_at=?,detail=? WHERE id=?").bind(now,detail,job.id).run();await setResult(job.id,'skipped',detail);return json({...current,job:null});
   }
   await setResult(job.id,'processing','Envio pelo WhatsApp conectado.');
-  return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text:raw?(job.recipient==='loja'?orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(runtime.PUBLIC_URL&&unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+runtime.PUBLIC_URL+'/acompanhar/'+unpackOrder(raw).data.trackingToken:'')):'',resumed}});
+  return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text:raw?(job.recipient==='loja'?orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+(unpackOrder(raw).data.domain||runtime.PUBLIC_URL||new URL(req.url).origin)+'/acompanhar/'+unpackOrder(raw).data.trackingToken:'')):'',resumed}});
  }
  throw new HttpError(404,'Não encontrado');
 }
