@@ -62,7 +62,7 @@ function FloatingBag() {
     api('catalog').then(r => {if (active) setProducts(r.products);}).catch(() => {});
     return () => {active = false;};
   }, [customerPage, catalogPage, cartReady, count, setProducts]);
-  if (!customerPage || bag) return null;
+  if (!customerPage || bag || !count) return null;
   return <a className="floating-bag" href="/sacola" aria-label={`Abrir sacola, ${count} ${count === 1 ? 'item' : 'itens'}`} onClick={event => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     // The catalog opens its drawer immediately; other pages follow the real URL.

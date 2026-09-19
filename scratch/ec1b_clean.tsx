@@ -3,7 +3,7 @@ import { categorySlug } from "@/lib/category-path";
 import { paymentAllowed, type PaymentMethod } from "@/lib/payment-options";
 import { useBag } from "./bag-provider";
 import { requestId as newRequestId } from "@/lib/request-id";
-import { useEffect, useState, lazy, Suspense, useRef } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { flushSync } from "react-dom";
 import {
   ShoppingBag,
@@ -60,14 +60,6 @@ import { PrintOrder } from "./print-order";
 const LazyAddressFields = lazy(() =>
   import("./address-fields").then((m) => ({ default: m.AddressFields })),
 );
-function formatPhone(value: string) {
-  const v = value.replace(/\D/g, "");
-  if (!v) return "";
-  if (v.length <= 2) return `(${v}`;
-  if (v.length <= 6) return `(${v.slice(0, 2)}) ${v.slice(2)}`;
-  if (v.length <= 10) return `(${v.slice(0, 2)}) ${v.slice(2, 6)}-${v.slice(6)}`;
-  return `(${v.slice(0, 2)}) ${v.slice(2, 7)}-${v.slice(7, 11)}`;
-}
 function AddressFields(props: React.ComponentProps<typeof LazyAddressFields>) {
   return (
     <Suspense fallback={<p>Carregando endereço…</p>}>
@@ -144,15 +136,13 @@ export default function Storefront({
     [step, setStep] = useState(0),
     [selected, setSelected] = useState<Product | null>(initialProduct || null),
     [selectedQty, setSelectedQty] = useState(1);
-  const [profile, setProfile] = useState<Profile & { password?: string }>({
+  const [profile, setProfile] = useState<Profile>({
       name: "",
       cpf: "",
       email: "",
       phone: "",
-      password: "",
       whatsappConsent: false,
     }),
-    [customerExists, setCustomerExists] = useState(false),
     [address, setAddress] = useState<Address>(emptyAddress),
     [addressModal, setAddressModal] = useState(false),
     [quote, setQuote] = useState<Quote | null>(null),
@@ -421,22 +411,14 @@ export default function Storefront({
     setAddress(a);
     setQuote(null);
   }
-  const lastAutoCalc = useRef("");
-  useEffect(() => {
-    const current = JSON.stringify(address.location);
-    if (address.location?.confirmed && !quote && !busy && lastAutoCalc.current !== current) {
-      lastAutoCalc.current = current;
-      calculate(true);
-    }
-  }, [address.location, quote, busy]);
-  async function calculate(silent = false) {
+  async function calculate() {
     const parsed = addressSchema.safeParse(address);
     if (!parsed.success) {
-      if (!silent) toast.error(parsed.error.issues[0].message);
+      toast.error(parsed.error.issues[0].message);
       return;
     }
     if (!parsed.data.location?.confirmed) {
-      if (!silent) toast.error("Adicione e confirme o ponto de entrega no mapa.");
+      toast.error("Adicione e confirme o ponto de entrega no mapa.");
       return;
     }
     setBusy(true);
@@ -448,10 +430,10 @@ export default function Storefront({
         body: JSON.stringify(parsed.data),
       });
       setQuote(r);
-      if (!silent) toast.success("Frete calculado para seu endereço.");
+      toast.success("Frete calculado para seu endereço.");
     } catch (e) {
       setQuote(null);
-      if (!silent) toast.error(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -459,82 +441,49 @@ export default function Storefront({
   async function continueBag() {
     if (!count || busy) return;
     if (!signedIn) {
-      if (profile.phone.replace(/\D/g, "").length < 10) {
-        toast.error("Informe um telefone com DDD válido.");
-        return;
-      }
-      setBusy(true);
-      try {
-        const r = await api("customer/lookup-phone", {
-          method: "POST",
-          body: JSON.stringify({ phone: profile.phone }),
-        });
-        if (r.exists) {
-          setCustomerExists(true);
-          setProfile((p) => ({ ...p, name: r.name, email: r.email || "", cpf: r.cpf || "" }));
-          if (r.address) {
-            setAddress(r.address);
-          }
-          if (r.quote) {
-            setQuote(r.quote);
-            setAddress(r.quote.address);
-            setDelivery("delivery");
-          } else {
-            setDelivery("pickup");
-          }
-          setStep(2); // Jump to Fast Track
-        } else {
-          setCustomerExists(false);
-          setStep(1); // Normal flow
-        }
-      } catch (e) {
-        toast.error(errorMessage(e));
-      } finally {
-        setBusy(false);
-      }
+      window.location.href =
+        "/conta?next=" + encodeURIComponent("/?checkout=1");
       return;
     }
-    setStep(1);
+    const r = profileSchema.omit({ address: true }).safeParse(profile);
+    if (r.success) {
+      setProfile(r.data);
+      setStep(2);
+    } else {
+      setStep(1);
+    }
   }
-  function continueDelivery() {
-    if (delivery === "delivery" && (!quote || quote.expires < Date.now())) {
-      toast.error("Calcule o frete para continuar.");
-      return;
-    }
-    if (!signedIn) {
-      setStep(2); // Go to Profile
-      return;
-    }
-    setStep(3); // Go to Payment
-  }
-  async function saveProfile() {
+  function continueProfile() {
     const r = profileSchema.omit({ address: true }).safeParse(profile);
     if (!r.success) {
       toast.error(r.error.issues[0].message);
       return;
     }
     setProfile(r.data);
-    
-    if (!customerExists) {
-      setBusy(true);
-      try {
-        if (profile.password && profile.password.length >= 6) {
-          await api("customer/register", {
-            method: "POST",
-            body: JSON.stringify({ ...profile, address: delivery === "delivery" ? address : undefined, email: profile.email || profile.phone })
-          });
-          setSignedIn(true);
-        }
-      } catch (e) {
-        toast.error(errorMessage(e));
-        setBusy(false);
-        return;
-      } finally {
-        setBusy(false);
-      }
+    setStep(2);
+  }
+  async function saveProfile() {
+    const r = profileSchema.safeParse({
+      ...profile,
+      ...(delivery === "delivery" ? { address } : { address: undefined }),
+    });
+    if (!r.success) {
+      toast.error(r.error.issues[0].message);
+      return;
     }
-    
-    setStep(3);
+    if (delivery === "delivery" && (!quote || quote.expires < Date.now())) {
+      toast.error("Calcule o frete para continuar.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("profile", { method: "PUT", body: JSON.stringify(r.data) });
+      setStep(3);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   }
   async function placeOrder() {
     if (busy) return;
@@ -548,7 +497,7 @@ export default function Storefront({
       const r = await api("orders", {
         method: "POST",
         body: JSON.stringify({
-          guest: !signedIn,
+          guest: false,
           requestId,
           expectedTotal: total,
           items: items.map((i) => ({
@@ -636,22 +585,12 @@ export default function Storefront({
     <>
       <header className="store-header compact-header">
         <Brand />
-        <div className="header-status">
-          <div
-            className={"store-status " + (loaded && status.open ? "open" : "")}
-            role="status"
-          >
-            <Clock3 size={15} />
-            {loaded ? status.label : "Consultando horário…"}
-          </div>
-        </div>
         <nav>
           <a className="active" href="/catalogo">
             Catálogo
           </a>
           <a href="/encomendas">Encomendas</a>
           <a href="/conta">Área do cliente</a>
-          <a href="/pedidos">Meus pedidos</a>
         </nav>
         <button className="bag-button" onClick={openBag}>
           <ShoppingBag size={18} />
@@ -663,10 +602,16 @@ export default function Storefront({
         <a href="/catalogo">Catálogo</a>
         <a href="/encomendas">Encomendas</a>
         <a href="/conta">Área do cliente</a>
-        <a href="/pedidos">Meus pedidos</a>
       </nav>
       <main className="store-main delivery-catalog">
-        <div className="catalog-store-info desktop-only">
+        <div className="catalog-store-info">
+          <div
+            className={"store-status " + (loaded && status.open ? "open" : "")}
+            role="status"
+          >
+            <Clock3 size={17} />
+            {loaded ? status.label : "Consultando horário…"}
+          </div>
           <span>{loaded ? status.detail : ""}</span>
           {loaded && status.open && (
             <span className="prep-estimate">
@@ -682,6 +627,14 @@ export default function Storefront({
           </button>
         </div>
         <section id="catalogo">
+          <div className="catalog-heading">
+            <div>
+              <div className="eyebrow">FEITO À MÃO, COM O CORAÇÃO</div>
+              <h1>Seu dia merece um doce.</h1>
+              <p>Escolha seu favorito. A gente cuida do carinho.</p>
+            </div>
+            <span className="catalog-count">{products.length} produtos</span>
+          </div>
           <div className="catalog-tools">
             <Tabs
               value={category}
@@ -713,14 +666,6 @@ export default function Storefront({
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-          </div>
-          <div className="catalog-heading desktop-only">
-            <div>
-              <div className="eyebrow">FEITO À MÃO, COM O CORAÇÃO</div>
-              <h1>Seu dia merece um doce.</h1>
-              <p>Escolha seu favorito. A gente cuida do carinho.</p>
-            </div>
-            <span className="catalog-count">{products.length} produtos</span>
           </div>
           {loadError && (
             <div className="notice error">
@@ -940,12 +885,10 @@ export default function Storefront({
                 </span>
               </div>
             )}
-            {!quote && (
-              <Button onClick={() => calculate(false)} disabled={busy}>
-                {busy ? <LoaderCircle className="spin" /> : <MapPin size={18} />}
-                Calcular entrega
-              </Button>
-            )}
+            <Button onClick={calculate} disabled={busy}>
+              {busy ? <LoaderCircle className="spin" /> : <MapPin size={18} />}
+              Calcular entrega
+            </Button>
             {!deliveryAvailable && (
               <p className="small-muted">
                 A loja ainda está configurando a área de entrega.
@@ -1010,7 +953,7 @@ export default function Storefront({
           ) : (
             <>
               <div className="checkout-steps">
-                {["Sacola", "Entrega", "Cadastro", "Pagamento"].map((s, i) => (
+                {["Sacola", "Cadastro", "Entrega", "Pagamento"].map((s, i) => (
                   <span
                     className={i === step ? "current" : i < step ? "done" : ""}
                     key={s}
@@ -1046,7 +989,18 @@ export default function Storefront({
                                 item.
                               </p>
                             )}
-
+                            <Input
+                              aria-label={"Observação para " + p.name}
+                              placeholder="Observação deste doce (opcional)"
+                              maxLength={200}
+                              value={itemNotes[p.id] || ""}
+                              onChange={(e) =>
+                                setItemNotes((n) => ({
+                                  ...n,
+                                  [p.id]: e.target.value,
+                                }))
+                              }
+                            />
                             <div className="quantity">
                               <button
                                 aria-label={"Diminuir " + p.name}
@@ -1085,12 +1039,13 @@ export default function Storefront({
                     )}
                     {count > 0 && (
                       <div className="order-note">
-
+                        <Button variant="outline" onClick={() => load()}>
+                          Atualizar preços e disponibilidade
+                        </Button>
                         <Label htmlFor="note">Alguma observação?</Label>
                         <Textarea
                           id="note"
                           maxLength={500}
-                          rows={2}
                           placeholder="Conte aqui algum detalhe do seu pedido…"
                           value={note}
                           onChange={(e) => setNote(e.target.value)}
@@ -1098,60 +1053,25 @@ export default function Storefront({
                       </div>
                     )}
                     {count > 0 && !signedIn && (
-                      <div className="guest-choice form-stack">
+                      <div className="guest-choice">
                         <p>
-                          {customerExists ? `Bem-vindo de volta, ${profile.name.split(' ')[0]}!` : "Informe seu telefone para continuar."}
+                          Para continuar, entre ou crie sua conta. Seus dados
+                          ficam salvos para os próximos pedidos.
                         </p>
-                        <Label htmlFor="customer-phone">Telefone com DDD</Label>
-                        <Input
-                          id="customer-phone"
-                          autoComplete="tel-national"
-                          inputMode="tel"
-                          maxLength={15}
-                          value={profile.phone}
-                          onChange={(e) => {
-                            setProfile((p) => ({ ...p, phone: formatPhone(e.target.value) }));
-                            if (customerExists) setCustomerExists(false);
-                          }}
-                          placeholder="(00) 00000-0000"
-                        />
                       </div>
                     )}
                   </>
                 )}
-                {step === 2 && (
+                {step === 1 && (
                   <div className="form-stack">
-                    {customerExists && !signedIn ? (
-                      <div className="fast-track form-stack">
-                        <div className="step-heading">
-                          <h3>Bem-vindo de volta!</h3>
-                          <p>Encontramos o seu cadastro.</p>
-                        </div>
-                        <div className="masked-data" style={{ padding: '1rem', background: 'var(--surface-sunken)', borderRadius: '8px' }}>
-                          <p style={{marginBottom: '0.5rem'}}><strong>Nome:</strong> {profile.name ? profile.name.split(' ').map(n => n.charAt(0) + '*'.repeat(Math.max(2, n.length - 1))).join(' ') : ''}</p>
-                          <p style={{marginBottom: '0.5rem'}}><strong>Entrega:</strong> {delivery === 'delivery' && quote ? `${address.street?.slice(0, 3)}***, ${address.district}` : 'Retirada na confeitaria'}</p>
-                          {delivery === 'delivery' && quote && <p style={{margin: 0}}><strong>Frete:</strong> {money(quote.fee)}</p>}
-                        </div>
-                        <p className="small-muted">Deseja continuar com estes dados para finalizar o pedido?</p>
-                        <Button onClick={() => setStep(3)}>Sim, continuar para pagamento</Button>
-                        <Button variant="outline" onClick={() => {
-                          setCustomerExists(false);
-                          setProfile({name: "", phone: profile.phone, email: "", cpf: "", whatsappConsent: false});
-                          setAddress(emptyAddress);
-                          setQuote(null);
-                          setStep(1);
-                        }}>Não, alterar dados</Button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="step-heading">
-                          <h3>Vamos nos conhecer?</h3>
-                          <p>
-                            {signedIn
-                              ? "Seus dados ficam salvos para os próximos pedidos."
-                              : "Informe os dados necessários para este pedido."}
-                          </p>
-                        </div>
+                    <div className="step-heading">
+                      <h3>Vamos nos conhecer?</h3>
+                      <p>
+                        {signedIn
+                          ? "Seus dados ficam salvos para os próximos pedidos."
+                          : "Informe os dados necessários para este pedido."}
+                      </p>
+                    </div>
                     <div>
                       <Label htmlFor="customer-name">Nome completo</Label>
                       <Input
@@ -1170,10 +1090,10 @@ export default function Storefront({
                         id="customer-phone"
                         autoComplete="tel-national"
                         inputMode="tel"
-                        maxLength={15}
+                        maxLength={16}
                         value={profile.phone}
                         onChange={(e) =>
-                          setProfile((p) => ({ ...p, phone: formatPhone(e.target.value) }))
+                          setProfile((p) => ({ ...p, phone: e.target.value }))
                         }
                         placeholder="(00) 00000-0000"
                       />
@@ -1208,22 +1128,6 @@ export default function Storefront({
                         placeholder="000.000.000-00"
                       />
                     </div>
-                    {!customerExists && (
-                      <div>
-                        <Label htmlFor="customer-password">
-                          Crie uma senha <span className="muted">(opcional)</span>
-                        </Label>
-                        <Input
-                          id="customer-password"
-                          type="password"
-                          value={profile.password || ""}
-                          onChange={(e) =>
-                            setProfile((p) => ({ ...p, password: e.target.value }))
-                          }
-                          placeholder="Mínimo 6 caracteres"
-                        />
-                      </div>
-                    )}
                     <label className="consent">
                       <Checkbox
                         checked={profile.whatsappConsent}
@@ -1244,11 +1148,9 @@ export default function Storefront({
                       contato e realizar a entrega. Seus dados de contato não
                       aparecem no catálogo.
                     </p>
-                  </>
+                  </div>
                 )}
-              </div>
-            )}
-            {step === 1 && (
+                {step === 2 && (
                   <div className="form-stack">
                     <div className="step-heading">
                       <h3>Como prefere receber?</h3>
@@ -1260,20 +1162,18 @@ export default function Storefront({
                           value={address}
                           onChange={updateAddress}
                         />
-                        {!quote && (
-                          <Button
-                            variant="outline"
-                            onClick={() => calculate(false)}
-                            disabled={busy}
-                          >
-                            {busy ? (
-                              <LoaderCircle className="spin" />
-                            ) : (
-                              <MapPin size={16} />
-                            )}{" "}
-                            Calcular frete
-                          </Button>
-                        )}
+                        <Button
+                          variant="outline"
+                          onClick={calculate}
+                          disabled={busy}
+                        >
+                          {busy ? (
+                            <LoaderCircle className="spin" />
+                          ) : (
+                            <MapPin size={16} />
+                          )}{" "}
+                          Calcular frete
+                        </Button>
                         {quote && (
                           <div className="quote-result">
                             <Check size={18} />
@@ -1513,20 +1413,22 @@ export default function Storefront({
                     >
                       {busy
                         ? "Aguarde…"
-                        : "Continuar pedido"}{" "}
+                        : !signedIn
+                          ? "Entrar ou criar conta"
+                          : "Continuar pedido"}{" "}
                       <ArrowRight size={17} />
                     </Button>
                   ) : step === 1 ? (
                     <Button
                       className="primary-action"
-                      onClick={continueDelivery}
+                      onClick={continueProfile}
                     >
-                      Continuar <ArrowRight size={17} />
+                      Escolher entrega <ArrowRight size={17} />
                     </Button>
-                  ) : step === 2 && !(customerExists && !signedIn) ? (
+                  ) : step === 2 ? (
                     <Button
                       className="primary-action"
-                      disabled={busy}
+                      disabled={busy || (delivery === "delivery" && !quote)}
                       onClick={saveProfile}
                     >
                       Ir para pagamento <ArrowRight size={17} />
