@@ -422,6 +422,33 @@ export default function Storefront({
     setQuote(null);
   }
   const lastAutoCalc = useRef("");
+  
+  // Auto-geocode and confirm point automatically when address is completely filled
+  useEffect(() => {
+    if (delivery !== "delivery" || busy || quote || address.location?.confirmed) return;
+    
+    const parsed = addressSchema.safeParse(address);
+    if (parsed.success) {
+      const controller = new AbortController();
+      const timer = setTimeout(async () => {
+        setBusy(true);
+        try {
+          const point = await api("address/point", {
+            method: "POST",
+            body: JSON.stringify(parsed.data),
+            signal: controller.signal
+          });
+          setAddress(a => ({ ...a, location: { ...point, confirmed: true, source: 'pin' } }));
+        } catch (e) {
+          // ignore error, user can still click "Calcular frete" to see it or use map
+        } finally {
+          setBusy(false);
+        }
+      }, 1000);
+      return () => { clearTimeout(timer); controller.abort(); };
+    }
+  }, [address, delivery, busy, quote]);
+
   useEffect(() => {
     const current = JSON.stringify(address.location);
     if (address.location?.confirmed && !quote && !busy && lastAutoCalc.current !== current) {
