@@ -755,8 +755,16 @@ export default function Storefront({
                   </span>
                 </button>
                 <div className="product-copy">
-                  <div className="product-category-row">
-                    <div className="product-category">{p.category}</div>
+                  <div className="product-category">{p.category}</div>
+                  <button
+                    className="product-title"
+                    onClick={() => selectProduct(p)}
+                  >
+                    {p.name}
+                  </button>
+                  <p>{p.description}</p>
+                  <div className="product-bottom">
+                    <strong>{money(p.price)}</strong>
                     <button
                       disabled={!!p.sold_out || p.stock === 0}
                       className="add-button"
@@ -765,16 +773,6 @@ export default function Storefront({
                     >
                       <Plus size={20} />
                     </button>
-                  </div>
-                  <button
-                    className="product-title"
-                    onClick={() => selectProduct(p)}
-                  >
-                    {p.name}
-                  </button>
-                  <p className="product-description desktop-only">{p.description}</p>
-                  <div className="product-bottom">
-                    <strong>{money(p.price)}</strong>
                   </div>
                   <div className="product-social-bar">
                     <button
