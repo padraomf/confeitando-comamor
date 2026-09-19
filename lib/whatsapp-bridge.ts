@@ -81,8 +81,8 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   if(!job){const lease=token();job=await db().prepare("UPDATE whatsapp_outbox SET status='processing',lease_token=?,worker_id=?,updated_at=? WHERE id=(SELECT id FROM whatsapp_outbox WHERE status='queued' ORDER BY created_at LIMIT 1) AND status='queued' RETURNING *").bind(lease,bridge.token_hash,now).first<any>()}
   if(!job)return json({...current,job:null});
   const raw=await db().prepare('SELECT * FROM orders WHERE id=?').bind(job.order_id).first<any>();
-  if(!resumed&&(!raw||(job.event==='Pago'&&raw.payment_status!=='Pago')||(job.event!=='Pago'&&job.event!==raw.status)||job.created_at<now-86400000)){
-   const detail=raw?.status==='Cancelado'?'Pedido cancelado.':'Aviso expirado ou etapa já atualizada. O próximo aviso contém a situação atual.';await db().prepare("UPDATE whatsapp_outbox SET status='skipped',updated_at=?,detail=? WHERE id=?").bind(now,detail,job.id).run();await setResult(job.id,'skipped',detail);return json({...current,job:null});
+  if(!resumed&&(!raw||(job.event==='Pago'&&raw.payment_status!=='Pago')||(job.event!=='Pago'&&job.event!==raw.status)||job.created_at<now-600000)){
+   const detail=raw?.status==='Cancelado'?'Pedido cancelado.':'Aviso expirado (mais de 10 minutos na fila). O próximo aviso conterá a situação atualizada.';await db().prepare("UPDATE whatsapp_outbox SET status='skipped',updated_at=?,detail=? WHERE id=?").bind(now,detail,job.id).run();await setResult(job.id,'skipped',detail);return json({...current,job:null});
   }
   await setResult(job.id,'processing','Envio pelo WhatsApp conectado.');
   return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text:raw?(job.recipient==='loja'?orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(runtime.PUBLIC_URL&&unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+runtime.PUBLIC_URL+'/acompanhar/'+unpackOrder(raw).data.trackingToken:'')):'',resumed}});
