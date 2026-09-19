@@ -1161,7 +1161,7 @@ export default function Storefront({
                         onChange={(e) =>
                           setProfile((p) => ({ ...p, name: e.target.value }))
                         }
-                        placeholder="Como podemos chamar você?"
+                        placeholder="Nome completo"
                       />
                     </div>
                     <div>
@@ -1175,7 +1175,7 @@ export default function Storefront({
                         onChange={(e) =>
                           setProfile((p) => ({ ...p, phone: formatPhone(e.target.value) }))
                         }
-                        placeholder="(00) 00000-0000"
+                        placeholder="Telefone com DDD"
                       />
                     </div>
                     <div>
@@ -1190,7 +1190,7 @@ export default function Storefront({
                         onChange={(e) =>
                           setProfile((p) => ({ ...p, email: e.target.value }))
                         }
-                        placeholder="seu@email.com"
+                        placeholder="E-mail (opcional)"
                       />
                     </div>
                     <div>
@@ -1205,7 +1205,7 @@ export default function Storefront({
                         onChange={(e) =>
                           setProfile((p) => ({ ...p, cpf: e.target.value }))
                         }
-                        placeholder="000.000.000-00"
+                        placeholder="CPF (opcional)"
                       />
                     </div>
                     {!customerExists && (
@@ -1220,7 +1220,7 @@ export default function Storefront({
                           onChange={(e) =>
                             setProfile((p) => ({ ...p, password: e.target.value }))
                           }
-                          placeholder="Mínimo 6 caracteres"
+                          placeholder="Crie uma senha (opcional)"
                         />
                       </div>
                     )}
