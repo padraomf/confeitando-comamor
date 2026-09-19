@@ -3,7 +3,7 @@ import { categorySlug } from "@/lib/category-path";
 import { paymentAllowed, type PaymentMethod } from "@/lib/payment-options";
 import { useBag } from "./bag-provider";
 import { requestId as newRequestId } from "@/lib/request-id";
-import { useEffect, useState, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense, useRef } from "react";
 import { flushSync } from "react-dom";
 import {
   ShoppingBag,
@@ -421,14 +421,22 @@ export default function Storefront({
     setAddress(a);
     setQuote(null);
   }
-  async function calculate() {
+  const lastAutoCalc = useRef("");
+  useEffect(() => {
+    const current = JSON.stringify(address.location);
+    if (address.location?.confirmed && !quote && !busy && lastAutoCalc.current !== current) {
+      lastAutoCalc.current = current;
+      calculate(true);
+    }
+  }, [address.location, quote, busy]);
+  async function calculate(silent = false) {
     const parsed = addressSchema.safeParse(address);
     if (!parsed.success) {
-      toast.error(parsed.error.issues[0].message);
+      if (!silent) toast.error(parsed.error.issues[0].message);
       return;
     }
     if (!parsed.data.location?.confirmed) {
-      toast.error("Adicione e confirme o ponto de entrega no mapa.");
+      if (!silent) toast.error("Adicione e confirme o ponto de entrega no mapa.");
       return;
     }
     setBusy(true);
@@ -440,10 +448,10 @@ export default function Storefront({
         body: JSON.stringify(parsed.data),
       });
       setQuote(r);
-      toast.success("Frete calculado para seu endereço.");
+      if (!silent) toast.success("Frete calculado para seu endereço.");
     } catch (e) {
       setQuote(null);
-      toast.error(errorMessage(e));
+      if (!silent) toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -930,10 +938,12 @@ export default function Storefront({
                 </span>
               </div>
             )}
-            <Button onClick={calculate} disabled={busy}>
-              {busy ? <LoaderCircle className="spin" /> : <MapPin size={18} />}
-              Calcular entrega
-            </Button>
+            {!quote && (
+              <Button onClick={() => calculate(false)} disabled={busy}>
+                {busy ? <LoaderCircle className="spin" /> : <MapPin size={18} />}
+                Calcular entrega
+              </Button>
+            )}
             {!deliveryAvailable && (
               <p className="small-muted">
                 A loja ainda está configurando a área de entrega.
@@ -1248,18 +1258,20 @@ export default function Storefront({
                           value={address}
                           onChange={updateAddress}
                         />
-                        <Button
-                          variant="outline"
-                          onClick={calculate}
-                          disabled={busy}
-                        >
-                          {busy ? (
-                            <LoaderCircle className="spin" />
-                          ) : (
-                            <MapPin size={16} />
-                          )}{" "}
-                          Calcular frete
-                        </Button>
+                        {!quote && (
+                          <Button
+                            variant="outline"
+                            onClick={() => calculate(false)}
+                            disabled={busy}
+                          >
+                            {busy ? (
+                              <LoaderCircle className="spin" />
+                            ) : (
+                              <MapPin size={16} />
+                            )}{" "}
+                            Calcular frete
+                          </Button>
+                        )}
                         {quote && (
                           <div className="quote-result">
                             <Check size={18} />
