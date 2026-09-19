@@ -96,6 +96,27 @@ async function handler(req:Request){try{
  let paymentError=false;if(selectedProvider!=='manual'){try{order.checkout_url=await checkoutLink(order, new URL(req.url).origin);const latest:any=await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first();Object.assign(order,unpackOrder(latest));}catch{paymentError=true}}
  try{await recordEvent(order,'Recebido','cliente')}catch{console.error('Order notification unavailable')}
  return json({order,paymentError},201)}
+ if(path.match(/^orders\/[^/]+\/payment$/)&&method==='PATCH'){
+ const u=await shopper(req);
+ const id=path.split('/')[1];
+ const raw:any=await db().prepare('SELECT * FROM orders WHERE id=? AND user_id=?').bind(id,u.userId).first();
+ if(!raw)throw new HttpError(404,'Pedido não encontrado');
+ if(raw.payment_status!=='Aguardando pagamento'||['Cancelado','Não retirado'].includes(raw.status))throw new HttpError(422,'Não é possível alterar o pagamento deste pedido.');
+ const input=z.object({payment:z.enum(['pix','card','cash','card_machine'])}).parse(await body(req));
+ const config=await settings();
+ const order=unpackOrder(raw);
+ const s=await secrets();
+ const selectedProvider=['cash','card_machine'].includes(input.payment)?'manual':paymentReady(s,config.paymentProvider)?config.paymentProvider:'manual';
+ if(['mercadopago','picpay'].includes(selectedProvider)&&input.payment==='pix'&&(!order.data.profile.email||!order.data.profile.cpf))throw new HttpError(422,'Informe CPF e e-mail no perfil para usar Pix automático.');
+ const newData={...order.data, paymentProvider:input.payment==='cash'?'manual':selectedProvider, pixCode:undefined, pixKey:undefined, pixName:undefined, pixCity:undefined};
+ if(input.payment==='pix'&&selectedProvider==='manual'&&config.pixKey){newData.pixCode=pixPayload(config.pixKey,config.pixName,config.pixCity,order.total,order.code);newData.pixKey=config.pixKey;newData.pixName=config.pixName;newData.pixCity=config.pixCity}
+ const paymentStatus=['cash','card_machine'].includes(input.payment)?(order.data.delivery==='pickup'?'Pagar na retirada':'Pagar na entrega'):'Aguardando pagamento';
+ await db().prepare('UPDATE orders SET payment=?, payment_status=?, data=?, checkout_url=NULL WHERE id=?').bind(input.payment,paymentStatus,JSON.stringify(newData),id).run();
+ order.payment=input.payment;order.payment_status=paymentStatus;order.data=newData;order.checkout_url=undefined;
+ let paymentError=false;
+ if(selectedProvider!=='manual'){try{await checkoutLink(order,new URL(req.url).origin)}catch{paymentError=true}}
+ return json({order:unpackOrder(await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first()),paymentError})
+ }
  if(path.match(/^orders\/[^/]+\/pay$/)&&method==='POST'){const u=await shopper(req);const id=path.split('/')[1];const raw:any=await db().prepare('SELECT * FROM orders WHERE id=? AND user_id=?').bind(id,u.userId).first();if(!raw)throw new HttpError(404,'Pedido não encontrado');if(['Pago','Estornado','Contestado','Estorno parcial'].includes(raw.payment_status)||payOnDelivery(unpackOrder(raw))||manualPayment(unpackOrder(raw))||['Cancelado','Não retirado'].includes(raw.status))throw new HttpError(422,'Este pedido não precisa de pagamento online');const url=await checkoutLink(unpackOrder(raw), new URL(req.url).origin);return json({url,order:unpackOrder(await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first())})}
  if(/^orders\/[^/]+\/print$/.test(path)&&method==='GET'){const id=path.split('/')[1];const user=await customer(req)||await guest(req);const member=await panelUser(req);if(member?.role==='production')throw new HttpError(403,'Impressão restrita ao atendimento');const isAdmin=!!member;if(!user&&!isAdmin)throw new HttpError(401,'Entre na sua conta para ver este pedido.');const raw:any=await db().prepare(isAdmin?'SELECT * FROM orders WHERE id=?':'SELECT * FROM orders WHERE id=? AND user_id=?').bind(...(isAdmin?[id]:[id,user!.userId])).first();if(!raw)throw new HttpError(404,'Pedido não encontrado');return receipt(unpackOrder(raw),await settings(),new URL(req.url).searchParams.get('paper')==='80mm'?'80mm':'a4')}
  if(path.startsWith('admin/')){
