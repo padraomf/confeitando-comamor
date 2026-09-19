@@ -161,6 +161,11 @@ async function handler(req:Request){try{
  await db().prepare("UPDATE whatsapp_outbox SET status='skipped', detail='Cancelado' WHERE status IN ('queued', 'processing')").run();
  return json({ok:true});
  }
+ if(path==='debug'&&method==='GET'){
+ const order:any=await db().prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 1').first();
+ const outbox:any=await db().prepare('SELECT * FROM whatsapp_outbox ORDER BY created_at DESC LIMIT 5').all();
+ return json({order: unpackOrder(order), outbox: outbox.results});
+ }
  throw new HttpError(404,'Não encontrado');
  }catch(e){if(e instanceof ZodError)return json({error:e.issues[0]?.message??'Confira os dados'},422);if(e instanceof HttpError)return json({error:e.message},e.status);console.error('Commerce request failed',e instanceof Error?e.name:'unknown');return json({error:'Não foi possível concluir. Seus dados foram preservados; tente novamente.'},503)}}
 export const GET=handler;export const POST=handler;export const PUT=handler;export const PATCH=handler;export const DELETE=handler;
