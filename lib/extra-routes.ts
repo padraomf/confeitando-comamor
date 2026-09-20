@@ -65,7 +65,7 @@ export async function extraRoutes(req:Request,path:string){
      domain:new URL(req.url).origin,
      trackingToken:crypto.randomUUID()+crypto.randomUUID(),
      paymentProvider:'manual',
-     profile:input.profile,
+     profile:{...input.profile,whatsappConsent:true},
      address:input.delivery==='delivery'?input.profile.address:null,
      delivery:input.delivery,
      fee:input.fee,
