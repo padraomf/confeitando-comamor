@@ -61,7 +61,7 @@ export async function extraRoutes(req:Request,path:string){
    
    const orderData={
      items:enrichedItems,
-     storeName:(await import('./server').then(m=>m.settings())).then(s=>s.name),
+     storeName:'',
      domain:new URL(req.url).origin,
      trackingToken:crypto.randomUUID()+crypto.randomUUID(),
      paymentProvider:'manual',
