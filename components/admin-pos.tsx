@@ -240,7 +240,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
 
               {delivery === 'delivery' && (
                 <div style={{ background: '#fcf9f5', padding: '16px', borderRadius: '8px', border: '1px solid #eedfd4' }}>
-                  <AddressFields address={address} onChange={setAddress} />
+                  <AddressFields value={address} onChange={setAddress} />
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', marginTop: '16px' }}>
                     <Button variant="outline" type="button" disabled={busy} onClick={calculateDistance}>Calcular Frete</Button>
                     <label className="field" style={{ flex: 1, margin: 0 }}>
