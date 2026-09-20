@@ -24,6 +24,65 @@ export async function extraRoutes(req:Request,path:string){
  if(path.startsWith('admin/events/')&&req.method==='GET'){const id=path.split('/')[2];const [events,proofs]=await Promise.all([db().prepare('SELECT event,actor,created_at FROM order_events WHERE order_id=? ORDER BY created_at').bind(id).all(),db().prepare('SELECT id,created_at FROM order_proofs WHERE order_id=? ORDER BY created_at DESC').bind(id).all()]);return json({events:events.results,proofs:proofs.results})}
  if(path.startsWith('admin/proofs/')&&req.method==='GET'){const id=path.split('/')[2],p=await db().prepare('SELECT object_key FROM order_proofs WHERE id=?').bind(id).first<any>();const object=p?await runtime.BUCKET!.get(p.object_key):null;if(!object)throw new HttpError(404,'Comprovante não encontrado');return new Response(object.body,{headers:{'Content-Type':object.httpMetadata?.contentType||'image/jpeg','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}})}
  if(path.startsWith('admin/originals/')&&req.method==='GET'){const r=await db().prepare('SELECT * FROM image_originals WHERE id=?').bind(path.split('/')[2]).first<any>();const object=r?await runtime.BUCKET!.get(r.object_key):null;if(!object)throw new HttpError(404,'Original não encontrado');return new Response(object.body,{headers:{'Content-Type':r.content_type,'Content-Disposition':'attachment','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}})}
+ if(path==='admin/pos-order'&&req.method==='POST'){
+   const input=z.object({
+     profile:profileSchema.extend({id:z.string().max(100).optional()}),
+     items:z.array(z.object({id:z.string(),quantity:z.number().int().min(1),note:z.string().max(200).default(''),name:z.string(),price:z.number()})).min(1),
+     delivery:z.enum(['delivery','pickup']),
+     payment:z.enum(['pix','cash','card_machine']),
+     fee:z.number().int().min(0),
+     paid:z.boolean(),
+     note:z.string().max(500).default('')
+   }).parse(await req.json());
+   
+   let profileId=input.profile.id;
+   if(!profileId){
+     profileId=crypto.randomUUID();
+     await db().prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').bind(profileId,JSON.stringify(input.profile),Date.now()).run();
+   }else{
+     await db().prepare('UPDATE profiles SET data=?, updated_at=? WHERE user_id=?').bind(JSON.stringify(input.profile),Date.now(),profileId).run();
+   }
+   
+   const total=input.items.reduce((acc,item)=>acc+(item.price*item.quantity),0)+input.fee;
+   const orderId=crypto.randomUUID();
+   const code=orderId.slice(0,8).toUpperCase();
+   const timestamp=Date.now();
+   const status=input.paid?(input.delivery==='pickup'?'Pronto para retirada':'Em preparo'):'Recebido';
+   const paymentStatus=input.paid?'Pago':(input.delivery==='pickup'?'Pagar na retirada':'Pagar na entrega');
+   
+   const orderData={
+     items:input.items,
+     storeName:(await import('./server').then(m=>m.settings())).then(s=>s.name),
+     domain:new URL(req.url).origin,
+     trackingToken:crypto.randomUUID()+crypto.randomUUID(),
+     paymentProvider:'manual',
+     profile:input.profile,
+     address:input.delivery==='delivery'?input.profile.address:null,
+     delivery:input.delivery,
+     fee:input.fee,
+     distance:0,
+     note:input.note,
+     change:null,
+     ...(input.delivery==='pickup'?{pickupCode:String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000)}:{})
+   };
+
+   // Fetch actual store name
+   const config=await (await import('./server')).settings();
+   orderData.storeName=config.name;
+
+   const {reserveStock}=await import('./stock');
+   await db().batch([
+     db().prepare('INSERT INTO orders(id,user_id,request_id,code,data,total,status,payment,payment_status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(orderId,profileId,crypto.randomUUID(),code,JSON.stringify(orderData),total,status,input.payment,paymentStatus,timestamp),
+     ...reserveStock(orderId,input.items)
+   ]);
+   
+   if(input.paid){
+     const {recordEvent}=await import('./order-events');
+     await recordEvent({id:orderId,user_id:profileId,code,data:orderData,total,status,payment:input.payment,payment_status:paymentStatus,created_at:timestamp} as any,'Pago',a.userId);
+   }
+
+   return json({ok:true,orderId,code});
+ }
  }
  return null;
 }
