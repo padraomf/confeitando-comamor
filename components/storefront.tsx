@@ -661,10 +661,6 @@ export default function Storefront({
   );
   return (
     <>
-      {/* TODO: REMOVER BANNER DE TESTE */}
-      <div style={{ background: '#fef08a', color: '#854d0e', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '0.9rem', borderBottom: '1px solid #fde047', position: 'sticky', top: 0, zIndex: 100 }}>
-        🧪 SITE EM FASE DE TESTES: Simule seus pedidos à vontade! Nenhuma cobrança real será feita.
-      </div>
       <header className="store-header compact-header">
         <Brand />
         <div className="header-status">
