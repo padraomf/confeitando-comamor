@@ -45,7 +45,14 @@ export async function extraRoutes(req:Request,path:string){
      await db().prepare('UPDATE profiles SET data=?, updated_at=? WHERE user_id=?').bind(JSON.stringify(input.profile),Date.now(),profileId).run();
    }
    
-   const total=input.items.reduce((acc,item)=>acc+(item.price*item.quantity),0)+input.fee;
+   const available=await (await import('./server')).products();
+   const enrichedItems=input.items.map(item=>{
+     const p=(available as any[]).find(p=>p.id===item.id);
+     if(!p)throw new HttpError(422,'Produto não encontrado');
+     return {...item,image:p.image,stockTracked:p.stock!=null};
+   });
+
+   const total=enrichedItems.reduce((acc,item)=>acc+(item.price*item.quantity),0)+input.fee;
    const orderId=crypto.randomUUID();
    const code=orderId.slice(0,8).toUpperCase();
    const timestamp=Date.now();
@@ -53,7 +60,7 @@ export async function extraRoutes(req:Request,path:string){
    const paymentStatus=input.paid?'Pago':(input.delivery==='pickup'?'Pagar na retirada':'Pagar na entrega');
    
    const orderData={
-     items:input.items,
+     items:enrichedItems,
      storeName:(await import('./server').then(m=>m.settings())).then(s=>s.name),
      domain:new URL(req.url).origin,
      trackingToken:crypto.randomUUID()+crypto.randomUUID(),
@@ -75,7 +82,7 @@ export async function extraRoutes(req:Request,path:string){
    const {reserveStock}=await import('./stock');
    await db().batch([
      db().prepare('INSERT INTO orders(id,user_id,request_id,code,data,total,status,payment,payment_status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(orderId,profileId,crypto.randomUUID(),code,JSON.stringify(orderData),total,status,input.payment,paymentStatus,timestamp),
-     ...reserveStock(orderId,input.items)
+     ...reserveStock(orderId,enrichedItems)
    ]);
    
    if(input.paid){
