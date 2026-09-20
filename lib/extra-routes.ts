@@ -85,9 +85,11 @@ export async function extraRoutes(req:Request,path:string){
      ...reserveStock(orderId,enrichedItems)
    ]);
    
+   const {recordEvent}=await import('./order-events');
+   const orderObj={id:orderId,user_id:profileId,code,data:orderData,total,status,payment:input.payment,payment_status:paymentStatus,created_at:timestamp} as any;
+   try{await recordEvent(orderObj,'Recebido','pdv')}catch{/* WhatsApp pode estar offline */}
    if(input.paid){
-     const {recordEvent}=await import('./order-events');
-     await recordEvent({id:orderId,user_id:profileId,code,data:orderData,total,status,payment:input.payment,payment_status:paymentStatus,created_at:timestamp} as any,'Pago',a.userId);
+     try{await recordEvent(orderObj,'Pago',a.userId)}catch{/* idem */}
    }
 
    return json({ok:true,orderId,code});
