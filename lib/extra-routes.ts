@@ -26,7 +26,7 @@ export async function extraRoutes(req:Request,path:string){
  if(path.startsWith('admin/originals/')&&req.method==='GET'){const r=await db().prepare('SELECT * FROM image_originals WHERE id=?').bind(path.split('/')[2]).first<any>();const object=r?await runtime.BUCKET!.get(r.object_key):null;if(!object)throw new HttpError(404,'Original não encontrado');return new Response(object.body,{headers:{'Content-Type':r.content_type,'Content-Disposition':'attachment','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}})}
  if(path==='admin/pos-order'&&req.method==='POST'){
    const input=z.object({
-     profile:profileSchema.extend({id:z.string().max(100).optional()}),
+     profile:profileSchema.omit({address:true}).extend({id:z.string().max(100).optional(),address:z.any().optional()}),
      items:z.array(z.object({id:z.string(),quantity:z.number().int().min(1),note:z.string().max(200).default(''),name:z.string(),price:z.number()})).min(1),
      delivery:z.enum(['delivery','pickup']),
      payment:z.enum(['pix','cash','card_machine']),
