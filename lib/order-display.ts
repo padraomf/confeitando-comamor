@@ -23,6 +23,7 @@ export function collectionInfo(order:Order){
  return {title:'PAGAMENTO ONLINE PENDENTE',detail:'Aguardar a confirmação da loja. Não cobrar novamente na entrega.',due:0};
 }
 export function destinationUrl(order:Order){
+ if((order.data as any).googleMapsUrl)return (order.data as any).googleMapsUrl;
  if(order.data.delivery!=='delivery'||!order.data.address)return null;
  const point=order.data.address.location;
  const destination=point?.confirmed?`${point.lat},${point.lng}`:addressText({...order.data.address,complement:''})+', Brasil';

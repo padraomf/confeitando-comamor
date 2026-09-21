@@ -1,10 +1,9 @@
 import { useState, useMemo } from 'react';
-import { ShoppingBag, Plus, Minus, Search, Check, Store, MapPin, X, LoaderCircle } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Search, Check, Store, MapPin, X, LoaderCircle, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { AddressFields } from './address-fields';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { api, errorMessage } from '@/lib/client';
@@ -24,6 +23,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', cpf: '', email: '' });
   const [address, setAddress] = useState<any>({ street: '', number: '', complement: '', district: '', city: '', state: '', cep: '', location: null });
+  const [googleMapsUrl, setGoogleMapsUrl] = useState('');
   
   // Order State
   const [delivery, setDelivery] = useState<'delivery' | 'pickup'>('pickup');
@@ -99,6 +99,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
       email: c.data.email || ''
     });
     if (c.data.address) setAddress(c.data.address);
+    if (c.data.googleMapsUrl) setGoogleMapsUrl(c.data.googleMapsUrl);
     setSearchCustomer('');
     setCustomers([]);
   }
@@ -130,6 +131,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
     if (customerForm.name.trim().length < 3) return toast.error('Informe o nome do cliente');
     if (customerForm.phone.replace(/\D/g, '').length < 10) return toast.error('Informe um WhatsApp válido');
     if (delivery === 'delivery' && !address.street) return toast.error('Preencha o endereço para entrega');
+    if (delivery === 'delivery' && googleMapsUrl && !/^https?:\/\/(www\.)?(google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(googleMapsUrl)) return toast.error('Cole um link válido do Google Maps');
 
     setBusy(true);
     try {
@@ -149,7 +151,8 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
           payment,
           fee: delivery === 'delivery' ? finalFee : 0,
           paid,
-          note
+          note,
+          googleMapsUrl: delivery === 'delivery' && googleMapsUrl ? googleMapsUrl : undefined
         })
       });
       toast.success('Pedido criado com sucesso!');
@@ -175,7 +178,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
               onClick={() => setStep(s as any)}
               style={{ flex: 1, padding: '16px 12px', border: 0, background: step === s ? '#fffcf8' : 'transparent', fontWeight: step === s ? 600 : 400, color: step === s ? '#a43a57' : '#997c69', borderBottom: step === s ? '2px solid #a43a57' : '2px solid transparent' }}
             >
-              {i + 1}. {{ cart: 'Itens', customer: 'Cliente', payment: 'Pagamento' }[s as any]}
+              {i + 1}. {{ cart: 'Itens', customer: 'Cliente', payment: 'Pagamento' }[s as 'cart' | 'customer' | 'payment']}
             </button>
           ))}
         </div>
@@ -240,7 +243,40 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
 
               {delivery === 'delivery' && (
                 <div style={{ background: '#fcf9f5', padding: '16px', borderRadius: '8px', border: '1px solid #eedfd4' }}>
-                  <AddressFields value={address} onChange={setAddress} />
+                  <div className="form-stack">
+                    <div className="form-grid">
+                      <div><Label htmlFor="pos-cep">CEP</Label><Input id="pos-cep" inputMode="numeric" maxLength={9} value={address.cep} onChange={e => setAddress((a: any) => ({ ...a, cep: e.target.value }))} onBlur={async () => { const raw = address.cep.replace(/\D/g, ''); if (raw.length !== 8) return; try { const r = await api('address/cep?cep=' + raw); setAddress((a: any) => ({ ...a, ...r })); } catch {} }} placeholder="CEP" /></div>
+                      <div><Label htmlFor="pos-number">Número</Label><Input id="pos-number" value={address.number} onChange={e => setAddress((a: any) => ({ ...a, number: e.target.value }))} placeholder="Número" /></div>
+                    </div>
+                    <div><Label htmlFor="pos-street">Rua / avenida</Label><Input id="pos-street" value={address.street} onChange={e => setAddress((a: any) => ({ ...a, street: e.target.value }))} placeholder="Rua / avenida" /></div>
+                    <div><Label htmlFor="pos-district">Bairro</Label><Input id="pos-district" value={address.district} onChange={e => setAddress((a: any) => ({ ...a, district: e.target.value }))} placeholder="Bairro" /></div>
+                    <div className="form-grid city-row">
+                      <div><Label htmlFor="pos-city">Cidade</Label><Input id="pos-city" value={address.city} onChange={e => setAddress((a: any) => ({ ...a, city: e.target.value }))} placeholder="Cidade" /></div>
+                      <div><Label htmlFor="pos-state">UF</Label><Input id="pos-state" maxLength={2} value={address.state} onChange={e => setAddress((a: any) => ({ ...a, state: e.target.value.toUpperCase() }))} placeholder="UF" /></div>
+                    </div>
+                    <div><Label htmlFor="pos-complement">Complemento <span className="muted">(opcional)</span></Label><Input id="pos-complement" value={address.complement} onChange={e => setAddress((a: any) => ({ ...a, complement: e.target.value }))} placeholder="Complemento (opcional)" /></div>
+                  </div>
+
+                  <div style={{ marginTop: '16px', padding: '14px', background: '#fef9f2', border: '1px solid #e8d5c4', borderRadius: '8px' }}>
+                    <Label htmlFor="pos-maps-link" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                      <Link2 size={16} style={{ color: '#a43a57' }} />
+                      Link do Google Maps
+                    </Label>
+                    <Input
+                      id="pos-maps-link"
+                      type="url"
+                      value={googleMapsUrl}
+                      onChange={e => setGoogleMapsUrl(e.target.value.trim())}
+                      placeholder="Cole aqui o link do Google Maps..."
+                      style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                    />
+                    <p style={{ fontSize: '11px', color: '#a18266', marginTop: '6px' }}>
+                      {googleMapsUrl
+                        ? '✅ O QR Code com este link será incluído na nota do motoboy.'
+                        : 'Abra o Google Maps, busque o endereço e cole o link de compartilhamento. O motoboy escaneará o QR Code para abrir a rota.'}
+                    </p>
+                  </div>
+
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', marginTop: '16px' }}>
                     <Button variant="outline" type="button" disabled={busy} onClick={calculateDistance}>Calcular Frete</Button>
                     <label className="field" style={{ flex: 1, margin: 0 }}>

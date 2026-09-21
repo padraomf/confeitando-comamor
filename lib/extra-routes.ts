@@ -34,7 +34,8 @@ export async function extraRoutes(req:Request,path:string){
      payment:z.enum(['pix','cash','card_machine']),
      fee:z.number().int().min(0),
      paid:z.boolean(),
-     note:z.string().max(500).default('')
+     note:z.string().max(500).default(''),
+     googleMapsUrl:z.string().url().max(500).optional()
    }).parse(await req.json());
    
    let profileId=input.profile.id;
@@ -72,7 +73,8 @@ export async function extraRoutes(req:Request,path:string){
      distance:0,
      note:input.note,
      change:null,
-     ...(input.delivery==='pickup'?{pickupCode:String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000)}:{})
+     ...(input.delivery==='pickup'?{pickupCode:String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000)}:{}),
+     ...(input.googleMapsUrl?{googleMapsUrl:input.googleMapsUrl}:{})
    };
 
    // Fetch actual store name
