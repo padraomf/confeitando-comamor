@@ -98,7 +98,13 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
       cpf: c.data.cpf || '',
       email: c.data.email || ''
     });
-    if (c.data.address) setAddress(c.data.address);
+    if (c.data.address) {
+      setAddress(c.data.address);
+      if (c.data.address.location?.confirmed) {
+        const { lat, lng } = c.data.address.location;
+        setGoogleMapsUrl(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`);
+      }
+    }
     if (c.data.googleMapsUrl) setGoogleMapsUrl(c.data.googleMapsUrl);
     setSearchCustomer('');
     setCustomers([]);
