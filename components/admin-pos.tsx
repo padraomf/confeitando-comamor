@@ -103,11 +103,34 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
       if (c.data.address.location?.confirmed) {
         const { lat, lng } = c.data.address.location;
         setGoogleMapsUrl(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`);
+        setDelivery('delivery');
+        // Auto-calculate fee like the storefront does
+        autoCalculateFee(c.data.address);
       }
     }
     if (c.data.googleMapsUrl) setGoogleMapsUrl(c.data.googleMapsUrl);
     setSearchCustomer('');
     setCustomers([]);
+  }
+
+  async function autoCalculateFee(addr: any) {
+    setBusy(true);
+    try {
+      const confirmed = addr.location?.confirmed ? addr : { ...addr, location: await api('address/point', { method: 'POST', body: JSON.stringify(addr) }) };
+      const quote = await api('quote', { method: 'POST', body: JSON.stringify(confirmed) });
+      if (quote.fee != null) {
+        setFee((quote.fee / 100).toFixed(2).replace('.', ','));
+        if (quote.distance) {
+          toast.success(`Frete calculado: ${(quote.distance / 1000).toFixed(1).replace('.', ',')} km pela rota.`);
+        } else {
+          toast.success('Frete calculado com sucesso.');
+        }
+      }
+    } catch (e) {
+      toast.error('Não foi possível calcular o frete automaticamente. Insira o valor manualmente.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function calculateDistance() {
