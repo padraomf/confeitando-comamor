@@ -21,7 +21,7 @@ export class Connection{
   client.on('ready',()=>{if(current()){this.state='ready';this.qr='';this.phone=client.info?.wid?.user||''}});
   client.on('auth_failure',()=>{if(current()){this.state='auth_failure';this.qr=''}});
   client.on('disconnected',()=>{if(current()){this.state='disconnected';this.qr='';void this.stop(false)}});
-  this.starting=client.initialize().catch(()=>{if(current()){this.state='error';this.qr='';void this.stop(false,'error')}}).finally(()=>{this.starting=null;if(!current())void client.destroy().catch(()=>{})});
+  this.starting=client.initialize().catch((err)=>{console.error("Puppeteer/WA Error:", err); if(current()){this.state='error';this.qr='';void this.stop(false,'error')}}).finally(()=>{this.starting=null;if(!current())void client.destroy().catch(()=>{})});
  }
  async stop(logout,state='disconnected'){
   const client=this.client;this.client=null;this.qr='';this.state=state;this.phone='';
