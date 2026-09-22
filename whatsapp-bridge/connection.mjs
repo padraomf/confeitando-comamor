@@ -26,9 +26,15 @@ export class Connection{
  async stop(logout,state='disconnected'){
   const client=this.client;this.client=null;this.qr='';this.state=state;this.phone='';
   if(!client)return;
-  if(logout){try{await client.logout()}catch{}}
-  try{await client.destroy()}catch{}
-  if(logout){try{await rm(path.join(directory,'session'),{recursive:true,force:true})}catch{}}
+  if(logout){try{await Promise.race([client.logout(), new Promise(r => setTimeout(r, 5000))])}catch{}}
+  try{await Promise.race([client.destroy(), new Promise(r => setTimeout(r, 5000))])}catch{}
+  try{if(client.pupBrowser&&client.pupBrowser.process){client.pupBrowser.process().kill('SIGKILL')}}catch{}
+  if(logout){
+    for(let i=0;i<10;i++){
+      try{await rm(path.join(directory,'session'),{recursive:true,force:true});break}
+      catch{await new Promise(r=>setTimeout(r,1000))}
+    }
+  }
  }
  isReady(){return this.desired&&this.state==='ready'&&!!this.client}
 }
