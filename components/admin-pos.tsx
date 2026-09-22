@@ -303,10 +303,10 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
                         setBusy(true);
                         try {
                           const r = await api('admin/address/maps-link', { method: 'POST', body: JSON.stringify({ url: googleMapsUrl }) });
-                          const newAddress = { ...address, ...r.address, location: r.location };
-                          setAddress(newAddress);
+                          setAddress((prev:any) => ({ ...prev, location: r.location }));
                           toast.success('Localização extraída com sucesso!');
-                          const safeAddress = { ...newAddress, number: newAddress.number || 'S/N', cep: newAddress.cep || '00000-000', street: newAddress.street || 'Local', district: newAddress.district || 'Bairro', city: newAddress.city || 'Cidade', state: newAddress.state || 'XX' };
+                          const quoteAddress = { ...r.address, location: r.location };
+                          const safeAddress = { ...quoteAddress, number: quoteAddress.number || 'S/N', cep: quoteAddress.cep || '00000-000', street: quoteAddress.street || 'Local', district: quoteAddress.district || 'Bairro', city: quoteAddress.city || 'Cidade', state: quoteAddress.state || 'XX' };
                           const quote = await api('quote', { method: 'POST', body: JSON.stringify(safeAddress) });
                           if (quote.fee != null) {
                             setFee((quote.fee / 100).toFixed(2).replace('.', ','));
