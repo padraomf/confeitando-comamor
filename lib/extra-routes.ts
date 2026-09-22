@@ -52,7 +52,9 @@ export async function extraRoutes(req:Request,path:string){
    const {url}=z.object({url:z.string().url()}).parse(await req.json());
     let finalUrl=url;
     let html='';
-    try{const res=await fetch(url,{redirect:'follow',headers:{'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Accept-Language':'pt-BR,pt;q=0.9'}});finalUrl=res.url;html=await res.text()}catch(e){}
+    if(url.includes('goo.gl')||url.includes('maps.app.goo.gl')||url.includes('share.google')||url.includes('maps.apple.com')||url.includes('google.com/maps')){
+      try{const res=await fetch(url,{redirect:'follow',headers:{'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Accept-Language':'pt-BR,pt;q=0.9'}});finalUrl=res.url;html=await res.text()}catch(e){}
+    }
     let lat:number|null=null,lng:number|null=null;
     const atMatch=finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if(atMatch){lat=parseFloat(atMatch[1]);lng=parseFloat(atMatch[2])}
