@@ -901,7 +901,7 @@ export default function Storefront({
                   <DialogDescription>{selected.description}</DialogDescription>
                 </DialogHeader>
  
-                <div className="product-dialog-action">
+                <ProductSocial product={selected} signedIn={signedIn} onChange={updateSocial}>
                   <div className="quantity">
                     <button
                       aria-label="Diminuir quantidade"
@@ -922,20 +922,16 @@ export default function Storefront({
                     </button>
                   </div>
                   <Button
+                    className="btn-add"
                     disabled={!!selected.sold_out || selected.stock === 0}
                     onClick={() => {
                       add(selected.id, selectedQty);
                       setSelected(null);
                     }}
                   >
-                    Adicionar · {money(selected.price * selectedQty)}
+                    Adicionar - {money(selected.price * selectedQty)}
                   </Button>
-                </div>
-                <ProductSocial
-                  product={selected}
-                  signedIn={signedIn}
-                  onChange={updateSocial}
-                />
+                </ProductSocial>
               </div>
             </>
           )}
