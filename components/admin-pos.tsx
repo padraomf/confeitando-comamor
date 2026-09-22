@@ -303,9 +303,9 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
                         setBusy(true);
                         try {
                           const r = await api('admin/address/maps-link', { method: 'POST', body: JSON.stringify({ url: googleMapsUrl }) });
-                          setAddress((prev:any) => ({ ...prev, location: r.location }));
+                          setAddress((prev:any) => ({ ...prev, location: { ...r.location, source: 'pin' } }));
                           toast.success('Localização extraída com sucesso!');
-                          const quoteAddress = { ...r.address, location: r.location };
+                          const quoteAddress = { ...r.address, location: { ...r.location, source: 'pin' } };
                           const safeAddress = { ...quoteAddress, number: 'S/N', cep: '00000-000', street: 'Local', district: 'Bairro', city: 'Cidade', state: 'XX' };
                           const quote = await api('quote', { method: 'POST', body: JSON.stringify(safeAddress) });
                           if (quote.fee != null) {

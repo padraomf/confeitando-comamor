@@ -63,7 +63,7 @@ export async function extraRoutes(req:Request,path:string){
     if(lat===null||lng===null)throw new HttpError(400,'Não foi possível extrair a localização desse link. Tente outro formato.');
    const {reverseAddress}=await import('./route-service');
    const address=await reverseAddress(lat,lng);
-   return json({location:{lat,lng,confirmed:true},address});
+   return json({location:{lat,lng,confirmed:true,source:'pin'},address});
  }
  }
  if(path==='admin/pos-order'&&req.method==='POST'){
