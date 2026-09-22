@@ -159,8 +159,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
     if (cart.length === 0) return toast.error('O carrinho está vazio');
     if (customerForm.name.trim().length < 3) return toast.error('Informe o nome do cliente');
     if (customerForm.phone.replace(/\D/g, '').length < 10) return toast.error('Informe um WhatsApp válido');
-    if (delivery === 'delivery' && !address.street) return toast.error('Preencha o endereço para entrega');
-    if (delivery === 'delivery' && googleMapsUrl && !/^https?:\/\/(www\.)?(google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(googleMapsUrl)) return toast.error('Cole um link válido do Google Maps');
+    if (delivery === 'delivery' && !address.street && !googleMapsUrl) return toast.error('Preencha o endereço ou cole o link do Google Maps');
 
     setBusy(true);
     try {
@@ -173,7 +172,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
             phone: customerForm.phone,
             cpf: customerForm.cpf,
             email: customerForm.email,
-            address: address.street ? address : undefined
+            address: address.street ? address : (googleMapsUrl && address.location ? { ...address, street: 'Localização via Mapa' } : undefined)
           },
           items: cart.map(i => ({ id: i.id, quantity: i.quantity, note: i.note, name: i.name, price: i.price })),
           delivery,
@@ -291,14 +290,34 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
                       <Link2 size={16} style={{ color: '#a43a57' }} />
                       Link do Google Maps
                     </Label>
-                    <Input
-                      id="pos-maps-link"
-                      type="url"
-                      value={googleMapsUrl}
-                      onChange={e => setGoogleMapsUrl(e.target.value.trim())}
-                      placeholder="Cole aqui o link do Google Maps..."
-                      style={{ fontFamily: 'monospace', fontSize: '12px' }}
-                    />
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Input
+                        id="pos-maps-link"
+                        type="url"
+                        value={googleMapsUrl}
+                        onChange={e => setGoogleMapsUrl(e.target.value.trim())}
+                        placeholder="Cole aqui o link do Google Maps..."
+                        style={{ fontFamily: 'monospace', fontSize: '12px', flex: 1 }}
+                      />
+                      <Button variant="secondary" type="button" disabled={busy || !googleMapsUrl} onClick={async () => {
+                        setBusy(true);
+                        try {
+                          const r = await api('admin/address/maps-link', { method: 'POST', body: JSON.stringify({ url: googleMapsUrl }) });
+                          const newAddress = { ...address, ...r.address, location: r.location };
+                          setAddress(newAddress);
+                          toast.success('Localização extraída com sucesso!');
+                          const quote = await api('quote', { method: 'POST', body: JSON.stringify(newAddress) });
+                          if (quote.fee != null) {
+                            setFee((quote.fee / 100).toFixed(2).replace('.', ','));
+                            toast.success('Frete calculado com sucesso pela rota.');
+                          }
+                        } catch (e) {
+                          toast.error(errorMessage(e));
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}>Buscar e Calcular</Button>
+                    </div>
                     <p style={{ fontSize: '11px', color: '#a18266', marginTop: '6px' }}>
                       {googleMapsUrl
                         ? '✅ O QR Code com este link será incluído na nota do motoboy.'
