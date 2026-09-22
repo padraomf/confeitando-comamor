@@ -306,7 +306,8 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
                           const newAddress = { ...address, ...r.address, location: r.location };
                           setAddress(newAddress);
                           toast.success('Localização extraída com sucesso!');
-                          const quote = await api('quote', { method: 'POST', body: JSON.stringify(newAddress) });
+                          const safeAddress = { ...newAddress, number: newAddress.number || 'S/N', cep: newAddress.cep || '00000-000', street: newAddress.street || 'Local', district: newAddress.district || 'Bairro', city: newAddress.city || 'Cidade', state: newAddress.state || 'XX' };
+                          const quote = await api('quote', { method: 'POST', body: JSON.stringify(safeAddress) });
                           if (quote.fee != null) {
                             setFee((quote.fee / 100).toFixed(2).replace('.', ','));
                             toast.success('Frete calculado com sucesso pela rota.');
