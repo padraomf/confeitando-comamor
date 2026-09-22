@@ -900,10 +900,7 @@ export default function Storefront({
                   <DialogTitle>{selected.name}</DialogTitle>
                   <DialogDescription>{selected.description}</DialogDescription>
                 </DialogHeader>
-                <p className="allergen-note">
-                  Alergias ou restrições? Confirme os ingredientes com a
-                  confeitaria antes de pedir.
-                </p>
+ 
                 <div className="product-dialog-action">
                   <div className="quantity">
                     <button
