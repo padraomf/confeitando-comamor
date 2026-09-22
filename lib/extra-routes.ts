@@ -50,15 +50,15 @@ export async function extraRoutes(req:Request,path:string){
  if(path.startsWith('admin/originals/')&&req.method==='GET'){const r=await db().prepare('SELECT * FROM image_originals WHERE id=?').bind(path.split('/')[2]).first<any>();const object=r?await runtime.BUCKET!.get(r.object_key):null;if(!object)throw new HttpError(404,'Original não encontrado');return new Response(object.body,{headers:{'Content-Type':r.content_type,'Content-Disposition':'attachment','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}})}
  if(path==='admin/address/maps-link'&&req.method==='POST'){
    const {url}=z.object({url:z.string().url()}).parse(await req.json());
-   let finalUrl=url;
-   if(url.includes('goo.gl')||url.includes('maps.app.goo.gl')||url.includes('maps.apple.com')){
-     try{const res=await fetch(url,{redirect:'follow',headers:{'User-Agent':'Mozilla/5.0'}});finalUrl=res.url}catch(e){}
-   }
-   let lat:number|null=null,lng:number|null=null;
-   const atMatch=finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-   if(atMatch){lat=parseFloat(atMatch[1]);lng=parseFloat(atMatch[2])}
-   else{const qMatch=finalUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)||finalUrl.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);if(qMatch){lat=parseFloat(qMatch[1]);lng=parseFloat(qMatch[2])}}
-   if(lat===null||lng===null)throw new HttpError(400,'Não foi possível extrair a localização. Copie o link completo com o pino.');
+    let finalUrl=url;
+    let html='';
+    try{const res=await fetch(url,{redirect:'follow',headers:{'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64)','Accept-Language':'pt-BR,pt;q=0.9'}});finalUrl=res.url;html=await res.text()}catch(e){}
+    let lat:number|null=null,lng:number|null=null;
+    const atMatch=finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(atMatch){lat=parseFloat(atMatch[1]);lng=parseFloat(atMatch[2])}
+    else{const qMatch=finalUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/)||finalUrl.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);if(qMatch){lat=parseFloat(qMatch[1]);lng=parseFloat(qMatch[2])}}
+    if(lat===null||lng===null){const centerMatch=html.match(/center=(-?\d+\.\d+)(?:%2C|,)(-?\d+\.\d+)/);if(centerMatch){lat=parseFloat(centerMatch[1]);lng=parseFloat(centerMatch[2])}}
+    if(lat===null||lng===null)throw new HttpError(400,'Não foi possível extrair a localização desse link. Tente outro formato.');
    const {reverseAddress}=await import('./route-service');
    const address=await reverseAddress(lat,lng);
    return json({location:{lat,lng,confirmed:true},address});
