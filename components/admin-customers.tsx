@@ -6,7 +6,7 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { api, errorMessage } from '@/lib/client';
 import { money, addressText, emptyAddress, type Address } from '@/lib/commerce';
-import { ChevronDown, ChevronUp, Edit2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Edit2, Plus, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { AddressFields } from './address-fields';
 
@@ -68,6 +68,17 @@ function CustomerCard({ c, onUpdateNotes, onEdit }: { c: any, onUpdateNotes: (id
                 toast.error(errorMessage(e));
               }
             }}>Gerar nova senha</Button>
+            <Button variant="secondary" onClick={async () => {
+              if (!confirm(`Tem certeza que deseja excluir o cliente ${c.data.name}? Esta ação não pode ser desfeita.`)) return;
+              try {
+                await api('admin/customers', { method: 'DELETE', body: JSON.stringify({ id: c.user_id }) });
+                toast.success('Cliente excluído com sucesso.');
+                // Trigger a refresh somehow, or just reload the page for simplicity
+                window.location.reload();
+              } catch (e) {
+                toast.error(errorMessage(e));
+              }
+            }}><Trash2 size={15} style={{marginRight: '6px'}} /> Excluir</Button>
           </div>
           
           <a className="text-link" style={{ marginTop: '0.5rem', display: 'inline-block' }} href={'/painel/historico?cliente=' + encodeURIComponent(c.data.name)}>
