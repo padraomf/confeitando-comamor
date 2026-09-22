@@ -306,7 +306,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
                           setAddress((prev:any) => ({ ...prev, location: r.location }));
                           toast.success('Localização extraída com sucesso!');
                           const quoteAddress = { ...r.address, location: r.location };
-                          const safeAddress = { ...quoteAddress, number: quoteAddress.number || 'S/N', cep: quoteAddress.cep || '00000-000', street: quoteAddress.street || 'Local', district: quoteAddress.district || 'Bairro', city: quoteAddress.city || 'Cidade', state: quoteAddress.state || 'XX' };
+                          const safeAddress = { ...quoteAddress, number: 'S/N', cep: '00000-000', street: 'Local', district: 'Bairro', city: 'Cidade', state: 'XX' };
                           const quote = await api('quote', { method: 'POST', body: JSON.stringify(safeAddress) });
                           if (quote.fee != null) {
                             setFee((quote.fee / 100).toFixed(2).replace('.', ','));
