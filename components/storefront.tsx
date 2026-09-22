@@ -787,7 +787,7 @@ export default function Storefront({
                     className="product-title"
                     onClick={() => selectProduct(p)}
                   >
-                    <span style={{color: '#ef4444', fontWeight: 800, fontSize: '0.85rem', verticalAlign: 'middle', marginRight: 4}}>[TESTE]</span> {p.name}
+                    {p.name}
                   </button>
                   <p>{p.description}</p>
                   <div className="product-bottom">
@@ -897,7 +897,7 @@ export default function Storefront({
               <div className="product-dialog-copy">
                 <DialogHeader>
                   <div className="eyebrow">{selected.category}</div>
-                  <DialogTitle><span style={{color: '#ef4444', fontWeight: 800, fontSize: '0.9rem', verticalAlign: 'middle', marginRight: 4}}>[TESTE]</span> {selected.name}</DialogTitle>
+                  <DialogTitle>{selected.name}</DialogTitle>
                   <DialogDescription>{selected.description}</DialogDescription>
                 </DialogHeader>
                 <p className="allergen-note">
@@ -1063,7 +1063,7 @@ export default function Storefront({
                         <div className="bag-item" key={p.id}>
                           <img src={p.image} alt="" />
                           <div>
-                            <h3><span style={{color: '#ef4444', fontWeight: 800, fontSize: '0.8rem', verticalAlign: 'middle', marginRight: 4}}>[TESTE]</span> {p.name}</h3>
+                            <h3>{p.name}</h3>
                             <span>{money(p.price)}</span>
                             {(p.sold_out ||
                               p.stock === 0 ||
