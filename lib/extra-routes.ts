@@ -14,8 +14,19 @@ export async function extraRoutes(req:Request,path:string){
  if(path.endsWith('/check')&&req.method==='POST'){await rateLimit(req,'payment-check:'+u.userId,20);if(o.payment_status!=='Pago')await checkNativePayment(o);return json({order:unpackOrder(await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first<any>())})}
  if(path.endsWith('/proof')&&req.method==='POST'){if(o.payment!=='pix'||!manualPayment(o)||['Pago','Estornado','Contestado'].includes(o.payment_status)||['Cancelado','Não retirado'].includes(o.status))throw new HttpError(422,'Este pedido não precisa de comprovante');await rateLimit(req,'proof:'+u.userId,10);const photo=await readPhoto(req),proofId=crypto.randomUUID(),key='proofs/'+proofId+'.'+photo.ext;await runtime.BUCKET!.put(key,photo.bytes,{httpMetadata:{contentType:photo.type}});await db().batch([db().prepare('INSERT INTO order_proofs(id,order_id,object_key,created_at) VALUES(?,?,?,?)').bind(proofId,id,key,Date.now()),db().prepare("UPDATE orders SET payment_status='Comprovante em análise' WHERE id=? AND payment_status='Aguardando pagamento'").bind(id)]);return json({ok:true})}
  }
- if(path.startsWith('admin/customers')||/^admin\/(proofs|events|originals)\//.test(path)){
- const a=await panelUser(req);if(!a)throw new HttpError(401,'Entre no painel');if(a.role==='production')throw new HttpError(403,'Acesso restrito ao atendimento');
+  if(path.startsWith('admin/customers')||/^admin\/(proofs|events|originals|magic-clean-db)\//.test(path)||path==='admin/magic-clean-db'){
+  const a=await panelUser(req);if(!a)throw new HttpError(401,'Entre no painel');if(a.role==='production'&&path!=='admin/magic-clean-db')throw new HttpError(403,'Acesso restrito ao atendimento');
+  if(path==='admin/magic-clean-db'&&req.method==='GET'){
+    await db().batch([
+      db().prepare("UPDATE products SET name = TRIM(REPLACE(name, '[TESTE]', '')) WHERE name LIKE '%[TESTE]%'"),
+      db().prepare("DELETE FROM order_events"),
+      db().prepare("DELETE FROM order_proofs"),
+      db().prepare("DELETE FROM orders"),
+      db().prepare("DELETE FROM payment_receipts"),
+      db().prepare("DELETE FROM customer_sessions")
+    ]);
+    return new Response('Limpeza concluída com sucesso! Pode fechar esta página e recarregar seu painel.',{headers:{'Content-Type':'text/plain;charset=UTF-8'}});
+  }
  if(path==='admin/customers/reset-password'&&req.method==='POST'){const b=z.object({id:z.string().max(100)}).parse(await req.json());const tempPassword=Math.random().toString(36).slice(-8);const result=await db().prepare('UPDATE customers SET password_hash=? WHERE id=?').bind(await passwordHash(tempPassword),b.id).run();if(!result.meta.changes)throw new HttpError(404,'Cliente não encontrado no sistema de login');return json({password:tempPassword})}
  if(path==='admin/customers'&&req.method==='PATCH'){const b=z.object({id:z.string().max(100),notes:z.string().trim().max(2000)}).parse(await req.json());const result=await db().prepare('UPDATE profiles SET notes=? WHERE user_id=?').bind(b.notes,b.id).run();if(!result.meta.changes)throw new HttpError(404,'Cliente não encontrado');return json({ok:true})}
  if(path==='admin/customers'&&req.method==='PUT'){const p=profileSchema.extend({id:z.string().max(100),notes:z.string().trim().max(2000).default('')}).parse(await req.json());const {id,notes,...data}=p;const result=await db().prepare('UPDATE profiles SET data=?, notes=?, updated_at=? WHERE user_id=?').bind(JSON.stringify(data),notes,Date.now(),id).run();if(!result.meta.changes)throw new HttpError(404,'Cliente não encontrado');return json({ok:true})}
