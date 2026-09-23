@@ -117,7 +117,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
     setBusy(true);
     try {
       const confirmed = addr.location?.confirmed ? addr : { ...addr, location: await api('address/point', { method: 'POST', body: JSON.stringify(addr) }) };
-      const quote = await api('quote', { method: 'POST', body: JSON.stringify(confirmed) });
+      const quote = await api('admin/quote', { method: 'POST', body: JSON.stringify(confirmed) });
       if (quote.fee != null) {
         setFee((quote.fee / 100).toFixed(2).replace('.', ','));
         if (quote.distance) {
@@ -143,7 +143,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
       const location = await api('address/point', { method: 'POST', body: JSON.stringify(address) });
       const currentAddress = { ...address, location };
       setAddress(currentAddress);
-      const quote = await api('quote', { method: 'POST', body: JSON.stringify(currentAddress) });
+      const quote = await api('admin/quote', { method: 'POST', body: JSON.stringify(currentAddress) });
       if (quote.fee != null) {
         setFee((quote.fee / 100).toFixed(2).replace('.', ','));
         toast.success('Frete calculado com sucesso.');
@@ -307,7 +307,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
                           toast.success('Localização extraída com sucesso!');
                           const quoteAddress = { ...r.address, location: { ...r.location, source: 'pin' } };
                           const safeAddress = { ...quoteAddress, number: 'S/N', cep: '00000-000', street: 'Local', district: 'Bairro', city: 'Cidade', state: 'XX' };
-                          const quote = await api('quote', { method: 'POST', body: JSON.stringify(safeAddress) });
+                          const quote = await api('admin/quote', { method: 'POST', body: JSON.stringify(safeAddress) });
                           if (quote.fee != null) {
                             setFee((quote.fee / 100).toFixed(2).replace('.', ','));
                             toast.success('Frete calculado com sucesso pela rota.');

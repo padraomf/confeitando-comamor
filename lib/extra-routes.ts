@@ -77,7 +77,15 @@ export async function extraRoutes(req:Request,path:string){
    const address=await reverseAddress(lat,lng);
    return json({location:{lat,lng,confirmed:true,source:'pin'},address});
  }
+ 
+ if(path==='admin/quote'&&req.method==='POST'){
+   const {addressSchema}=await import('./commerce');
+   const address=addressSchema.parse(await req.json());
+   const {routeQuote}=await import('./route-service');
+   const {fee,distance}=await routeQuote(address);
+   return json({fee,distance});
  }
+ 
  if(path==='admin/pos-order'&&req.method==='POST'){
    const a=await panelUser(req);if(!a)throw new HttpError(401,'Entre no painel');if(a.role==='production')throw new HttpError(403,'Acesso restrito ao atendimento');
    const input=z.object({
