@@ -38,6 +38,6 @@ export async function routeQuote(a:Address){
   
   return {
     distance:Math.round(distance),
-    fee:Math.max(config.minFee,config.baseFee+Math.round(distance/1000*config.perKm))
+    fee:Math.floor(Math.max(config.minFee,config.baseFee+Math.round(distance/1000*config.perKm))/100)*100
   };
 }
