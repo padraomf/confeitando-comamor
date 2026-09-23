@@ -77,7 +77,8 @@ export async function extraRoutes(req:Request,path:string){
    const address=await reverseAddress(lat,lng);
    return json({location:{lat,lng,confirmed:true,source:'pin'},address});
  }
- 
+ }
+
  if(path==='admin/quote'&&req.method==='POST'){
    const {addressSchema}=await import('./commerce');
    const address=addressSchema.parse(await req.json());
