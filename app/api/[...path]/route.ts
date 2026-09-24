@@ -168,6 +168,20 @@ async function handler(req:Request){try{
  if(input.paid){if(currentAdmin.role==='production')throw new HttpError(403,'Seu acesso não permite confirmar pagamentos.');if(['Cancelado','Não retirado'].includes(raw.status))throw new HttpError(422,'Pedido encerrado');if(!manualPayment(unpackOrder(raw))&&currentAdmin.role!=='admin')throw new HttpError(422,'O pagamento online é confirmado pelo provedor');if(input.amount){if(!input.requestId)throw new HttpError(422,'Atualize a tela antes de receber.');await receivePayment(input.id,input.amount,input.id+':manual:'+input.requestId,currentAdmin.userId)}else await setPaid(input.id,'manual',currentAdmin.userId)}
  if(input.refund){if(currentAdmin.role!=='admin')throw new HttpError(403,'Registre aqui apenas devoluções manuais confirmadas pela responsável.');if(!manualPayment(unpackOrder(raw))&&currentAdmin.role!=='admin')throw new HttpError(422,'Devoluções online são processadas pelo provedor');if(!input.requestId||!input.amount)throw new HttpError(422,'Informe o valor devolvido.');await manualRefund(input.id,input.amount,input.requestId,currentAdmin.userId)}
  if(input.status){if(currentAdmin.role==='production'&&!['Em preparo','Pronto para retirada','Pronto para entrega'].includes(input.status))throw new HttpError(403,'Seu acesso permite apenas etapas de produção.');await advanceOrder(input.id,input.status,currentAdmin.userId,input.pickupCode)}return json({ok:true})}
+ if(path==='admin/order-items'&&method==='POST'){
+  const input=z.object({id:z.string().uuid(),name:z.string().trim().min(2).max(100),price:z.number().int().min(0),quantity:z.number().int().min(1).max(100)}).parse(await body(req));
+  const raw:any=await db().prepare('SELECT * FROM orders WHERE id=?').bind(input.id).first();
+  if(!raw)throw new HttpError(404,'Pedido não encontrado');
+  if(currentAdmin.role==='production')throw new HttpError(403,'Apenas o atendimento pode alterar itens.');
+  const order=unpackOrder(raw);
+  const addedItem={id:'extra-'+crypto.randomUUID().slice(0,8),name:input.name,price:input.price,quantity:input.quantity,image:'/brand-transparent.png',stockTracked:false};
+  order.data.items.push(addedItem);
+  const newTotal=order.total+(input.price*input.quantity);
+  let paymentStatus=order.payment_status;
+  if(paymentStatus==='Pago'&&input.price>0)paymentStatus='Parcialmente pago';
+  await db().prepare('UPDATE orders SET data=?, total=?, payment_status=? WHERE id=?').bind(JSON.stringify(order.data),newTotal,paymentStatus,input.id).run();
+  return json({ok:true})
+ }
 
  if(path==='admin/order'&&method==='DELETE'){
   if(currentAdmin.role!=='admin')throw new HttpError(403,'Apenas administradores podem excluir pedidos.');
