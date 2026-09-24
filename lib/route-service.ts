@@ -33,7 +33,7 @@ export async function routeQuote(a:Address){
   
   const r=await fetchJSON(`https://router.project-osrm.org/route/v1/driving/${config.lng},${config.lat};${a.location.lng},${a.location.lat}?overview=false&alternatives=true`, {headers: HEADERS});
   const distance=r.routes?.length ? Math.min(...r.routes.map((rt:any)=>rt.distance)) : undefined;
-  if(!Number.isFinite(distance)||distance<0)throw new HttpError(422,'Não encontramos uma rota. Confira o ponto no mapa.');
+  if(typeof distance!=='number'||!Number.isFinite(distance)||distance<0)throw new HttpError(422,'Não encontramos uma rota. Confira o ponto no mapa.');
   if(distance>config.maxKm*1000)throw new HttpError(422,`Endereço fora da área de entrega de ${config.maxKm} km.`);
   
   return {

@@ -113,7 +113,7 @@ export async function extraRoutes(req:Request,path:string){
    }
    
    const available=await (await import('./server')).products();
-   const enrichedItems=input.customOrder?input.items:input.items.map(item=>{
+   const enrichedItems=input.customOrder?input.items.map(i=>({...i,image:'',stockTracked:false})):input.items.map(item=>{
      const p=(available as any[]).find(p=>p.id===item.id);
      if(!p)throw new HttpError(422,'Produto não encontrado');
      return {...item,image:p.image,stockTracked:p.stock!=null};
