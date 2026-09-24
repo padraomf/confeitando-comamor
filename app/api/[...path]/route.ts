@@ -191,5 +191,5 @@ async function handler(req:Request){try{
  return json({order: unpackOrder(order), outbox: outbox.results});
  }
  throw new HttpError(404,'Não encontrado');
- }catch(e){if(e instanceof ZodError)return json({error:e.issues[0]?.message??'Confira os dados'},422);if(e instanceof HttpError)return json({error:e.message},e.status);console.error('Commerce request failed',e instanceof Error?e.name:'unknown');return json({error:'Não foi possível concluir. Seus dados foram preservados; tente novamente.'},503)}}
+ }catch(e){if(e instanceof ZodError)return json({error:e.issues[0]?.message??'Confira os dados'},422);if(e instanceof HttpError)return json({error:e.message},e.status);console.error('Commerce request failed',e instanceof Error?e.name:'unknown');return json({error:`Dev Error: ${e instanceof Error ? e.message + ' ' + e.stack : String(e)}`},503)}}
 export const GET=handler;export const POST=handler;export const PUT=handler;export const PATCH=handler;export const DELETE=handler;
