@@ -189,7 +189,7 @@ async function handler(req:Request){try{
   await db().batch([
    db().prepare('DELETE FROM order_events WHERE order_id=?').bind(id),
    db().prepare('DELETE FROM order_proofs WHERE order_id=?').bind(id),
-   db().prepare('DELETE FROM ledger WHERE entity_id LIKE ?').bind(id+'%'),
+   db().prepare('DELETE FROM payment_receipts WHERE order_id=?').bind(id),
    db().prepare('DELETE FROM orders WHERE id=?').bind(id)
   ]);
   return json({ok:true});
