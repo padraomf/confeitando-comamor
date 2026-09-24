@@ -84,6 +84,21 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
    const result=await db().prepare('UPDATE budgets SET status=?,data=?,updated_at=? WHERE id=? AND data=? AND status=?').bind(status,JSON.stringify(data),Date.now(),input.id,raw.data,raw.status).run();if(!result.meta.changes)throw new HttpError(409,'O orçamento mudou. Atualize antes de editar.');return json({ok:true});
   }
  }
+ if(path==='admin/budget'&&method==='POST'){
+  const member=await panelUser(req);if(!member)throw new HttpError(401,'Entre no painel.');
+  const store=await settings();
+  const input=z.object({name:z.string().min(2),phone:z.string(),description:z.string().min(5),date:dateOnly,delivery:z.enum(['pickup','delivery']),address:addressSchema.optional(),offer:z.object({total:z.number().int().positive(),fee:z.number().int().min(0),deposit:z.number().int().min(0),expires:dateOnly,terms:z.string()})}).parse(await body());
+  if(input.delivery==='delivery'&&!input.address)throw new HttpError(422,'Informe o endereço para entrega.');
+  const u=crypto.randomUUID();
+  const existingPhone=await db().prepare("SELECT user_id FROM profiles WHERE json_extract(data,'$.phone')=?").bind(input.phone).first<{user_id:string}>();
+  const userId=existingPhone?.user_id||u;
+  if(!existingPhone){await db().prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES (?,?,?)').bind(userId,JSON.stringify({name:input.name,phone:input.phone}),Date.now()).run();}
+  const id=crypto.randomUUID(),now=Date.now(),code='E-'+id.slice(0,8).toUpperCase();
+  const offer={...input.offer,version:crypto.randomUUID()};
+  const data={name:input.name,phone:input.phone,description:input.description,date:input.date,delivery:input.delivery,address:input.delivery==='delivery'?input.address:undefined,offer,cake:false,sweets:false,photos:[]};
+  await db().prepare('INSERT INTO budgets(id,user_id,request_id,code,data,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,userId,crypto.randomUUID(),code,JSON.stringify(data),'Orçamento enviado',now,now).run();
+  return json({ok:true});
+ }
  if(path==='admin/budget-convert'&&method==='POST'){
   const member=await panelUser(req);if(!member)throw new HttpError(401,'Entre no painel.');
   const input=z.object({id:z.string().uuid()}).parse(await body());
