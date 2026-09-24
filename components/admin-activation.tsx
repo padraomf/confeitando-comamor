@@ -22,8 +22,8 @@ export default function AdminActivation(){
    <label className="field"><span>Código de primeiro acesso</span><Input required type="password" autoComplete="off" spellCheck={false} maxLength={100} value={form.code} onChange={e=>field('code',e.target.value)}/></label>
    <label className="field"><span>Seu nome</span><Input required minLength={2} maxLength={80} autoComplete="name" value={form.name} onChange={e=>field('name',e.target.value)}/></label>
    <label className="field"><span>Escolha seu login</span><Input required minLength={3} maxLength={80} autoComplete="username" autoCapitalize="none" spellCheck={false} value={form.login} onChange={e=>field('login',e.target.value)}/><small>Letras sem acento, números, ponto, @ ou traço.</small></label>
-   <label className="field"><span>Crie sua senha</span><Input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={form.password} onChange={e=>field('password',e.target.value)}/><small>Pelo menos 12 caracteres.</small></label>
-   <label className="field"><span>Repita sua senha</span><Input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={form.confirmation} onChange={e=>field('confirmation',e.target.value)}/></label>
+   <label className="field"><span>Crie sua senha</span><Input required type="password" minLength={6} maxLength={128} autoComplete="new-password" value={form.password} onChange={e=>field('password',e.target.value)}/><small>Pelo menos 6 caracteres.</small></label>
+   <label className="field"><span>Repita sua senha</span><Input required type="password" minLength={6} maxLength={128} autoComplete="new-password" value={form.confirmation} onChange={e=>field('confirmation',e.target.value)}/></label>
    {error&&<p className="error-text" role="alert">{error}</p>}
    <Button disabled={busy}>{busy&&<LoaderCircle className="spin" size={18}/>}Criar meu acesso e entrar</Button>
   </form><p className="small-muted">O código só pode ser usado uma vez. Depois, entre com seu login e senha.</p><a className="text-link" href="/painel">Já tenho login e senha</a>

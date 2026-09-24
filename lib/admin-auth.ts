@@ -4,7 +4,7 @@ import {db,getSetting,HttpError,runtime} from './server';
 import {digest,token,passwordHash,passwordMatches,dummyHash,rateLimit} from './customer-auth';
 const cookieName='__Host-cca_admin',lifetime=12*60*60*1000;
 const loginSchema=z.string().trim().toLowerCase().min(3).max(80).regex(/^[a-z0-9._@-]+$/,'Use letras sem acento, números, ponto, @ ou traço no login.');
-const passwordSchema=z.string().min(12,'Use uma senha com pelo menos 12 caracteres.').max(128);
+const passwordSchema=z.string().min(6,'Use uma senha com pelo menos 6 caracteres.').max(128);
 export type PanelUser={userId:string;displayName:string;owner:boolean;role:'admin'|'attendance'|'production';accountId?:string};
 function rawToken(req:Request){const v=(req.headers.get('cookie')||'').split(';').map(c=>c.trim()).find(c=>c.startsWith(cookieName+'='))?.slice(cookieName.length+1);return v&&/^[a-f0-9]{64}$/.test(v)?v:null}
 const sessionCookie=(v:string,clear=false)=>`${cookieName}=${v}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${clear?0:lifetime/1000}`;
