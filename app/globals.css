@@ -150,4 +150,69 @@ body:has(.floating-bag){padding-bottom:70px}.panel-sections{display:flex;flex-di
 /* Catalog management and payment review */
 .category-row{gap:8px;flex-wrap:wrap}.category-row>span{flex:1;min-width:130px}.admin-product-actions{flex-wrap:wrap;gap:8px}.admin-product-actions button:disabled{opacity:.3;cursor:default}.bag-item input{margin:8px 0;max-width:100%;font-size:14px}.brand-editor img{max-width:180px;max-height:100px;object-fit:contain}.brand-editor .field{margin-bottom:14px}.payment-rules{border-collapse:collapse;width:100%}.payment-rules th,.payment-rules td{padding:10px 5px;text-align:center}.payment-rules th:first-child{text-align:left}.payment-rules caption{text-align:left;font-weight:600;margin-bottom:10px}.payment-ledger{display:grid;gap:12px}.card-brick{min-height:200px}.offer-summary{border:1px solid var(--border);border-radius:12px;padding:16px;display:grid;gap:10px;margin:16px 0}.offer-summary p{margin:0}.order-filters{flex-wrap:wrap}.order-filters>button{min-width:180px}.report-breakdown{flex-wrap:wrap}.preserve-lines{white-space:pre-wrap}.budget-actions{display:flex;gap:10px;flex-wrap:wrap}.stock-note{font-size:14px;color:var(--muted-foreground)}@media(max-width:640px){.admin-product-actions{justify-content:flex-start}.category-row{align-items:center}.order-filters>button{width:100%}.payment-rules{font-size:14px}.access-row>div{display:flex;flex-wrap:wrap;gap:6px}}
 
+
 .activation-card{width:min(100%,480px);text-align:left}.activation-card>svg,.activation-card>.eyebrow,.activation-card>h1{margin-inline:auto;text-align:center}.activation-card .field{align-items:stretch;text-align:left}.activation-card .field small{font-size:14px;line-height:1.4}.activation-card input{font-size:16px}.activation-card .form-stack>button{width:100%}
+
+/* POS Classes */
+.pos-container { display: flex; gap: 24px; height: 100%; align-items: flex-start; margin: -10px 0 10px; }
+.pos-flow { flex: 1; border: 1px solid #e7dbd2; border-radius: 12px; background: #fffcf8; overflow: hidden; display: flex; flex-direction: column; width: 100%; }
+.pos-summary { width: 320px; background: #fffcf8; border: 1px solid #e7dbd2; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; flex-shrink: 0; }
+
+/* Painel da Confeitaria - Melhorias Mobile */
+@media (max-width: 700px) {
+  .pos-container { flex-direction: column; gap: 16px; height: auto; }
+  .pos-summary { width: 100%; padding: 16px; }
+  .admin-header { padding: 12px 16px; gap: 12px; }
+  .admin-header > .text-link { font-size: 13px; }
+  .admin-wrap { padding: 16px 12px 40px; }
+  .page-heading { gap: 6px; flex-wrap: wrap; }
+  .page-heading h1 { font-size: 26px; line-height: 1.1; margin: 6px 0; }
+  .page-heading p { font-size: 13px; }
+  .store-status { font-size: 11px; padding: 6px 10px; margin-top: 6px; width: 100%; justify-content: center; }
+  .metric-grid { grid-template-columns: 1fr; gap: 8px; margin: 16px 0; }
+  .metric { padding: 12px 14px; }
+  .metric > span { font-size: 12px; }
+  .metric strong { font-size: 24px; margin: 4px 0 2px; }
+  .metric small { font-size: 11px; }
+  .admin-tabs { gap: 12px; height: auto !important; padding-bottom: 4px; }
+  .admin-tabs button { font-size: 13px; padding: 10px 0; }
+  .section-toolbar { gap: 10px; margin: 12px 0; }
+  .section-toolbar h2 { font-size: 22px; margin: 0 0 4px; }
+  .section-toolbar p { font-size: 13px; }
+  .section-toolbar > button { font-size: 13px; height: 38px; width: 100%; }
+  .order-filters { flex-direction: column; align-items: stretch; gap: 12px; margin: 14px 0; }
+  .order-filters [data-slot=select-trigger] { width: 100%; min-width: 0; font-size: 14px; height: 42px; }
+  .order-filters span { text-align: center; font-size: 13px; margin: 4px 0; }
+  .admin-orders { border-radius: 12px; }
+  .admin-order { grid-template-columns: 1fr auto; gap: 10px 14px; padding: 14px 12px; }
+  .admin-order > div:nth-child(1) { grid-column: 1 / -1; display: flex; justify-content: space-between; border-bottom: 1px dashed #eee3d9; padding-bottom: 8px; margin-bottom: 4px; flex-direction: row; align-items: center; }
+  .admin-order > div:nth-child(2) { grid-column: 1; }
+  .admin-order > div:nth-child(3) { grid-column: 1; display: flex; flex-direction: column; }
+  .admin-order > div:nth-child(4) { grid-column: 2; grid-row: 2 / 4; justify-content: center; flex-direction: column; align-items: flex-end; gap: 6px !important; }
+  .admin-order strong { font-size: 14px; }
+  .admin-order small { max-width: 220px; font-size: 12px; margin-top: 2px; }
+  .status-pill { font-size: 11px; padding: 5px 10px; }
+  .admin-empty { padding: 40px 16px; gap: 12px; }
+  .admin-empty h3 { font-size: 22px; }
+  .admin-empty p { font-size: 14px; }
+  .admin-product-grid { grid-template-columns: 1fr; gap: 14px; }
+  .admin-product > img { height: 220px; object-fit: cover; }
+  .admin-product > div { padding: 16px; }
+  .admin-product h3 { font-size: 22px; }
+  .admin-product strong { font-size: 17px; }
+  .admin-product-actions { gap: 12px; margin-top: 16px; padding-top: 14px; }
+  .admin-product-actions button { width: 34px; height: 34px; }
+  .visibility { font-size: 13px; }
+  .settings-grid { gap: 14px; }
+  .settings-card { padding: 16px; }
+  .settings-card h3 { font-size: 17px; margin-bottom: 12px; }
+  .settings-card .field { font-size: 14px; }
+  .upload-box { min-height: 120px; max-height: 160px; }
+  .upload-box img { height: 100px; }
+  .edit-product-dialog { padding: 18px; }
+  .product-editor .field { font-size: 14px; }
+  .order-detail-dialog { padding: 20px; }
+  .panel-sound { padding: 16px; gap: 12px; }
+  .panel-sound strong { font-size: 15px; }
+  .panel-sound small { font-size: 13px; }
+}

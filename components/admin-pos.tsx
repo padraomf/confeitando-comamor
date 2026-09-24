@@ -212,10 +212,10 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
   }
 
   return (
-    <div className="pos-container" style={{ display: 'flex', gap: '24px', height: '100%', alignItems: 'flex-start', margin: '-10px 0 10px' }}>
+    <div className="pos-container">
       
       {/* Left side: Flow */}
-      <div style={{ flex: 1, border: '1px solid #e7dbd2', borderRadius: '12px', background: '#fffcf8', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div className="pos-flow">
         
         {/* Step Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid #e7dbd2', background: '#faf7f3' }}>
@@ -416,7 +416,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
       </div>
 
       {/* Right side: Cart Summary */}
-      <div style={{ width: '320px', background: '#fffcf8', border: '1px solid #e7dbd2', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <div className="pos-summary">
         <h3 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 16px', display: 'flex', justifyContent: 'space-between' }}>
           Resumo <span style={{ color: '#927868', fontSize: '14px' }}>{cart.reduce((a, c) => a + c.quantity, 0)} itens</span>
         </h3>
