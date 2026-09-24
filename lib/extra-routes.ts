@@ -100,7 +100,8 @@ export async function extraRoutes(req:Request,path:string){
      googleMapsUrl:z.string().url().max(500).optional(),
      customOrder:z.boolean().optional(),
      dueDate:z.string().optional(),
-     orderDate:z.string().optional()
+     orderDate:z.string().optional(),
+     discountPercentage:z.number().min(0).max(100).optional()
    }).parse(await req.json());
    
    let profileId=input.profile.id;
@@ -119,7 +120,9 @@ export async function extraRoutes(req:Request,path:string){
      return {...item,image:p.image,stockTracked:p.stock!=null};
    });
 
-   const total=enrichedItems.reduce((acc,item)=>acc+(item.price*item.quantity),0)+input.fee;
+   const subtotal=enrichedItems.reduce((acc,item)=>acc+(item.price*item.quantity),0);
+   const discountAmount = input.discountPercentage ? Math.round(subtotal * (input.discountPercentage / 100)) : 0;
+   const total=subtotal - discountAmount + input.fee;
    const orderId=crypto.randomUUID();
    const code=orderId.slice(0,8).toUpperCase();
    const timestamp=input.orderDate ? new Date(input.orderDate + 'T12:00:00Z').getTime() : Date.now();
@@ -136,6 +139,7 @@ export async function extraRoutes(req:Request,path:string){
      address:input.delivery==='delivery'?input.profile.address:null,
      delivery:input.delivery,
      fee:input.fee,
+     ...(input.discountPercentage ? { discountPercentage: input.discountPercentage, discountAmount } : {}),
      distance:0,
      note:input.note,
      change:null,

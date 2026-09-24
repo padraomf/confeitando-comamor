@@ -28,6 +28,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
   // Order State
   const [delivery, setDelivery] = useState<'delivery' | 'pickup'>('pickup');
   const [fee, setFee] = useState('0,00');
+  const [discount, setDiscount] = useState('');
   const [payment, setPayment] = useState<'pix' | 'cash' | 'card_machine'>('pix');
   const [paid, setPaid] = useState(true);
   const [note, setNote] = useState('');
@@ -47,7 +48,9 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
 
   const cartTotal = orderType === 'custom' ? Math.round(Number(customPrice.replace(',', '.')) * 100) || 0 : cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const finalFee = Math.round(Number(fee.replace(',', '.')) * 100) || 0;
-  const total = cartTotal + (delivery === 'delivery' ? finalFee : 0);
+  const discountPerc = Math.min(100, Math.max(0, Math.round(Number(discount)) || 0));
+  const finalDiscount = Math.round(cartTotal * (discountPerc / 100));
+  const total = cartTotal - finalDiscount + (delivery === 'delivery' ? finalFee : 0);
 
   function addToCart(p: Product) {
     setCart(current => {
@@ -190,6 +193,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
           delivery,
           payment,
           fee: delivery === 'delivery' ? finalFee : 0,
+          discountPercentage: discountPerc > 0 ? discountPerc : undefined,
           paid,
           note,
           googleMapsUrl: delivery === 'delivery' && googleMapsUrl ? googleMapsUrl : undefined,
@@ -393,6 +397,11 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
               </Select>
 
               <label className="field">
+                <span>Desconto (%)</span>
+                <Input type="number" min={0} max={100} value={discount} onChange={e => setDiscount(e.target.value)} placeholder="0" />
+              </label>
+
+              <label className="field">
                 <span>Observação do Pedido (Opcional)</span>
                 <Textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Anotações internas ou detalhes repassados pelo cliente..." />
               </label>
@@ -438,6 +447,12 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
             <span>Subtotal</span>
             <span>{money(cartTotal)}</span>
           </div>
+          {finalDiscount > 0 && (
+            <div className="summary-line">
+              <span style={{ color: '#a43a57' }}>Desconto ({discountPerc}%)</span>
+              <span style={{ color: '#a43a57' }}>-{money(finalDiscount)}</span>
+            </div>
+          )}
           {delivery === 'delivery' && (
             <div className="summary-line">
               <span>Entrega</span>
