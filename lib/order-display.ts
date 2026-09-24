@@ -44,7 +44,7 @@ export function eventMessage(order:Order,event:string){
  if(closed)return `❌ Pedido #${order.code} foi ${status==='Cancelado'?'*cancelado*':'marcado como *não retirado*'}.\n\nFale com a confeitaria se precisar de ajuda.`;
  if(event==='Cobrança manual')return `🔔 Lembrete do pedido #${order.code}\n\nO pagamento de *${money(remainingAmount(order))}* está pendente.\n\nAcesse o link abaixo para conferir as opções de pagamento.`;
  if(event==='Pago')return `✅ Pagamento do pedido #${order.code} *confirmado*!\n\nEtapa: *${status.toLowerCase()}*`;
- if(status==='Recebido'){const payInfo=order.payment_status==='Pago'?'Pagamento *confirmado*.':payOnDelivery(order)?`Pagamento de ${money(remainingAmount(order))} na ${order.data.delivery==='pickup'?'retirada':'entrega'}.`:'Aguardamos a *confirmação do pagamento*.';return `${itemEmoji} Pedido #${order.code} *recebido*!\n\n${payInfo}`}
+ if(status==='Recebido'){const payInfo=order.payment_status==='Pago'?'Pagamento *confirmado*.':payOnDelivery(order)?`Pagamento de ${money(remainingAmount(order))} na ${order.data.delivery==='pickup'?'retirada':'entrega'}.`:'Tudo certo! Seu pedido já está registrado.';return `${itemEmoji} Pedido #${order.code} *recebido*!\n\n${payInfo}`}
  const statusEmoji=status==='Em preparo'?'👩‍🍳':status==='Pronto para entrega'||status==='Pronto para retirada'?'✅':status==='Saiu para entrega'?'🛵':status==='Entregue'||status==='Retirado'?'🎉':'🍰';
  let msg=`${statusEmoji} Pedido #${order.code}: *${status.toLowerCase()}*`;
  if(status==='Pronto para retirada'&&order.data.pickupCode)msg+=`\n\n🔑 Código de retirada: *${order.data.pickupCode}*`;
