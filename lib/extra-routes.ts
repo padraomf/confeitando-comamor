@@ -97,7 +97,10 @@ export async function extraRoutes(req:Request,path:string){
      fee:z.number().int().min(0),
      paid:z.boolean(),
      note:z.string().max(500).default(''),
-     googleMapsUrl:z.string().url().max(500).optional()
+     googleMapsUrl:z.string().url().max(500).optional(),
+     customOrder:z.boolean().optional(),
+     dueDate:z.string().optional(),
+     orderDate:z.string().optional()
    }).parse(await req.json());
    
    let profileId=input.profile.id;
@@ -110,7 +113,7 @@ export async function extraRoutes(req:Request,path:string){
    }
    
    const available=await (await import('./server')).products();
-   const enrichedItems=input.items.map(item=>{
+   const enrichedItems=input.customOrder?input.items:input.items.map(item=>{
      const p=(available as any[]).find(p=>p.id===item.id);
      if(!p)throw new HttpError(422,'Produto não encontrado');
      return {...item,image:p.image,stockTracked:p.stock!=null};
@@ -119,7 +122,7 @@ export async function extraRoutes(req:Request,path:string){
    const total=enrichedItems.reduce((acc,item)=>acc+(item.price*item.quantity),0)+input.fee;
    const orderId=crypto.randomUUID();
    const code=orderId.slice(0,8).toUpperCase();
-   const timestamp=Date.now();
+   const timestamp=input.orderDate ? new Date(input.orderDate + 'T12:00:00Z').getTime() : Date.now();
    const status=input.paid?(input.delivery==='pickup'?'Pronto para retirada':'Em preparo'):'Recebido';
    const paymentStatus=input.paid?'Pago':(input.delivery==='pickup'?'Pagar na retirada':'Pagar na entrega');
    
@@ -136,6 +139,7 @@ export async function extraRoutes(req:Request,path:string){
      distance:0,
      note:input.note,
      change:null,
+     ...(input.customOrder?{customOrder:true,dueDate:input.dueDate}:{}),
      ...(input.delivery==='pickup'?{pickupCode:String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000)}:{}),
      ...(input.googleMapsUrl?{googleMapsUrl:input.googleMapsUrl}:{})
    };
@@ -158,6 +162,18 @@ export async function extraRoutes(req:Request,path:string){
    }
 
    return json({ok:true,orderId,code});
+ }
+ if(path==='admin/order-bill'&&req.method==='POST'){
+   const a=await panelUser(req);if(!a)throw new HttpError(401,'Entre no painel');if(a.role==='production')throw new HttpError(403,'Acesso restrito');
+   const {id}=z.object({id:z.string()}).parse(await req.json());
+   const raw=await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first<any>();
+   if(!raw)throw new HttpError(404,'Pedido não encontrado');
+   const {unpackOrder}=await import('./server');
+   const o=unpackOrder(raw);
+   if(o.payment_status==='Pago')throw new HttpError(422,'Pedido já está pago.');
+   const {queueWhatsApp}=await import('./whatsapp-bridge');
+   await queueWhatsApp(o,'Cobrança manual');
+   return json({ok:true});
  }
  return null;
 }

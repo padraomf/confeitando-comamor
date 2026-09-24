@@ -169,6 +169,17 @@ async function handler(req:Request){try{
  if(input.refund){if(currentAdmin.role!=='admin')throw new HttpError(403,'Registre aqui apenas devoluções manuais confirmadas pela responsável.');if(!manualPayment(unpackOrder(raw))&&currentAdmin.role!=='admin')throw new HttpError(422,'Devoluções online são processadas pelo provedor');if(!input.requestId||!input.amount)throw new HttpError(422,'Informe o valor devolvido.');await manualRefund(input.id,input.amount,input.requestId,currentAdmin.userId)}
  if(input.status){if(currentAdmin.role==='production'&&!['Em preparo','Pronto para retirada','Pronto para entrega'].includes(input.status))throw new HttpError(403,'Seu acesso permite apenas etapas de produção.');await advanceOrder(input.id,input.status,currentAdmin.userId,input.pickupCode)}return json({ok:true})}
 
+ if(path==='admin/order'&&method==='DELETE'){
+  if(currentAdmin.role!=='admin')throw new HttpError(403,'Apenas administradores podem excluir pedidos.');
+  const {id}=z.object({id:z.string().uuid()}).parse(await body(req));
+  await db().batch([
+   db().prepare('DELETE FROM order_events WHERE order_id=?').bind(id),
+   db().prepare('DELETE FROM order_proofs WHERE order_id=?').bind(id),
+   db().prepare('DELETE FROM ledger WHERE entity_id LIKE ?').bind(id+'%'),
+   db().prepare('DELETE FROM orders WHERE id=?').bind(id)
+  ]);
+  return json({ok:true});
+ }
  }
  if(path==='purge-whatsapp'&&method==='GET'){
  await db().prepare("UPDATE whatsapp_outbox SET status='skipped', detail='Cancelado' WHERE status IN ('queued', 'processing')").run();

@@ -32,13 +32,20 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
   const [paid, setPaid] = useState(true);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  
+  // Custom Order State
+  const [orderType, setOrderType] = useState<'normal'|'custom'>('normal');
+  const [customDescription, setCustomDescription] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+  const [orderDate, setOrderDate] = useState(() => { const d = new Date(); d.setHours(d.getHours() - 3); return d.toISOString().split('T')[0]; });
+  const [dueDate, setDueDate] = useState('');
 
   const filteredProducts = useMemo(() => {
     const q = searchProduct.toLowerCase();
     return products.filter(p => !p.demo && p.active && (p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q)));
   }, [products, searchProduct]);
 
-  const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  const cartTotal = orderType === 'custom' ? Math.round(Number(customPrice.replace(',', '.')) * 100) || 0 : cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const finalFee = Math.round(Number(fee.replace(',', '.')) * 100) || 0;
   const total = cartTotal + (delivery === 'delivery' ? finalFee : 0);
 
@@ -156,7 +163,12 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
   }
 
   async function submitOrder() {
-    if (cart.length === 0) return toast.error('O carrinho está vazio');
+    if (orderType === 'normal' && cart.length === 0) return toast.error('O carrinho está vazio');
+    if (orderType === 'custom') {
+      if (!customDescription.trim()) return toast.error('Informe a descrição da encomenda');
+      if (cartTotal <= 0) return toast.error('Informe o valor da encomenda');
+      if (!dueDate) return toast.error('Informe a data de entrega/retirada');
+    }
     if (customerForm.name.trim().length < 3) return toast.error('Informe o nome do cliente');
     if (customerForm.phone.replace(/\D/g, '').length < 10) return toast.error('Informe um WhatsApp válido');
     if (delivery === 'delivery' && !address.street && !googleMapsUrl) return toast.error('Preencha o endereço ou cole o link do Google Maps');
@@ -174,13 +186,16 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
             email: customerForm.email,
             address: address.street ? address : (googleMapsUrl && address.location ? { ...address, street: 'Localização via Mapa' } : undefined)
           },
-          items: cart.map(i => ({ id: i.id, quantity: i.quantity, note: i.note, name: i.name, price: i.price })),
+          items: orderType === 'custom' ? [{ id: 'custom', quantity: 1, note: customDescription, name: 'Encomenda', price: cartTotal }] : cart.map(i => ({ id: i.id, quantity: i.quantity, note: i.note, name: i.name, price: i.price })),
           delivery,
           payment,
           fee: delivery === 'delivery' ? finalFee : 0,
           paid,
           note,
-          googleMapsUrl: delivery === 'delivery' && googleMapsUrl ? googleMapsUrl : undefined
+          googleMapsUrl: delivery === 'delivery' && googleMapsUrl ? googleMapsUrl : undefined,
+          customOrder: orderType === 'custom',
+          dueDate: orderType === 'custom' ? dueDate : undefined,
+          orderDate: orderType === 'custom' ? orderDate : undefined
         })
       });
       toast.success('Pedido criado com sucesso!');
@@ -214,20 +229,36 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
         <div style={{ padding: '24px', overflowY: 'auto', maxHeight: 'calc(90dvh - 180px)' }}>
           {step === 'cart' && (
             <div className="form-stack">
-              <Input placeholder="Buscar produto pelo nome..." value={searchProduct} onChange={e => setSearchProduct(e.target.value)} />
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px', marginTop: '12px' }}>
-                {filteredProducts.map(p => (
-                  <button key={p.id} onClick={() => addToCart(p)} style={{ border: '1px solid #e5d7cb', borderRadius: '8px', padding: '10px', background: 'white', textAlign: 'left', transition: 'transform 0.1s' }} onMouseDown={e => e.currentTarget.style.transform = 'scale(0.97)'} onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
-                    <div style={{ fontSize: '11px', color: '#a17e70', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.category}</div>
-                    <div style={{ fontSize: '14px', fontWeight: 500, lineHeight: 1.2, height: '34px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{p.name}</div>
-                    <div style={{ fontSize: '13px', color: '#927868', marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                      {money(p.price)}
-                      {p.stock != null && <span style={{ fontSize: '10px', background: '#f5eee7', padding: '2px 6px', borderRadius: '4px' }}>{p.stock} un</span>}
-                    </div>
-                  </button>
-                ))}
-                {filteredProducts.length === 0 && <p style={{ fontSize: '13px', color: '#a18266' }}>Nenhum produto disponível.</p>}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <Button variant={orderType === 'normal' ? 'default' : 'outline'} onClick={() => setOrderType('normal')} style={{ flex: 1 }}>Pedido normal</Button>
+                <Button variant={orderType === 'custom' ? 'default' : 'outline'} onClick={() => setOrderType('custom')} style={{ flex: 1 }}>Encomenda</Button>
               </div>
+              
+              {orderType === 'custom' ? (
+                <div className="form-stack">
+                  <label className="field"><span>Data do pedido</span><Input type="date" required value={orderDate} onChange={e => setOrderDate(e.target.value)} /></label>
+                  <label className="field"><span>Data de entrega/retirada</span><Input type="date" required value={dueDate} onChange={e => setDueDate(e.target.value)} /></label>
+                  <label className="field"><span>Descrição (tamanho, ingredientes, adicionais)</span><Textarea required placeholder="Ex: Bolo 20 fatias, recheio de morango, decoração rosa..." rows={4} value={customDescription} onChange={e => setCustomDescription(e.target.value)} /></label>
+                  <label className="field"><span>Valor total da encomenda (R$)</span><Input required inputMode="decimal" placeholder="0,00" value={customPrice} onChange={e => setCustomPrice(e.target.value)} /></label>
+                </div>
+              ) : (
+                <>
+                  <Input placeholder="Buscar produto pelo nome..." value={searchProduct} onChange={e => setSearchProduct(e.target.value)} />
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px', marginTop: '12px' }}>
+                    {filteredProducts.map(p => (
+                      <button key={p.id} onClick={() => addToCart(p)} style={{ border: '1px solid #e5d7cb', borderRadius: '8px', padding: '10px', background: 'white', textAlign: 'left', transition: 'transform 0.1s' }} onMouseDown={e => e.currentTarget.style.transform = 'scale(0.97)'} onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
+                        <div style={{ fontSize: '11px', color: '#a17e70', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.category}</div>
+                        <div style={{ fontSize: '14px', fontWeight: 500, lineHeight: 1.2, height: '34px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{p.name}</div>
+                        <div style={{ fontSize: '13px', color: '#927868', marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                          {money(p.price)}
+                          {p.stock != null && <span style={{ fontSize: '10px', background: '#f5eee7', padding: '2px 6px', borderRadius: '4px' }}>{p.stock} un</span>}
+                        </div>
+                      </button>
+                    ))}
+                    {filteredProducts.length === 0 && <p style={{ fontSize: '13px', color: '#a18266' }}>Nenhum produto disponível.</p>}
+                  </div>
+                </>
+              )}
             </div>
           )}
 

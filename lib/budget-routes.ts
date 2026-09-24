@@ -84,5 +84,24 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
    const result=await db().prepare('UPDATE budgets SET status=?,data=?,updated_at=? WHERE id=? AND data=? AND status=?').bind(status,JSON.stringify(data),Date.now(),input.id,raw.data,raw.status).run();if(!result.meta.changes)throw new HttpError(409,'O orçamento mudou. Atualize antes de editar.');return json({ok:true});
   }
  }
+ if(path==='admin/budget-convert'&&method==='POST'){
+  const member=await panelUser(req);if(!member)throw new HttpError(401,'Entre no painel.');
+  const input=z.object({id:z.string().uuid()}).parse(await body());
+  const raw=await db().prepare('SELECT * FROM budgets WHERE id=?').bind(input.id).first<any>();if(!raw)throw new HttpError(404,'Orçamento não encontrado.');
+  const budget=unpack(raw),offer=budget.data.offer;
+  if(budget.status==='Convertido em pedido')throw new HttpError(422,'Já convertido.');
+  if(!offer)throw new HttpError(422,'Envie uma proposta antes de converter.');
+  const store=await settings(),now=Date.now(),orderId=crypto.randomUUID(),code=orderId.slice(0,8).toUpperCase();
+  const profile={name:budget.data.name,phone:budget.data.phone,email:'',cpf:'',whatsappConsent:false,...budget.data.address?{address:budget.data.address}:{}};
+  const data={storeName:store.name,budgetId:input.id,dueDate:budget.data.date,terms:offer.terms,depositRequired:offer.total,items:[{id:'budget-'+input.id,name:'Encomenda #'+budget.code,quantity:1,price:offer.total-offer.fee,image:store.favicon,note:budget.data.description}],profile,address:budget.data.delivery==='delivery'?budget.data.address:undefined,delivery:budget.data.delivery,fee:offer.fee,paymentProvider:'manual',change:null,note:budget.data.description};
+  await db().batch([
+   db().prepare("INSERT INTO orders(id,user_id,request_id,code,data,total,status,payment,payment_status,created_at) VALUES (?,?,?,?,?,?,'Recebido','cash',?,?)").bind(orderId,raw.user_id,input.id,code,JSON.stringify(data),offer.total,'Aguardando pagamento',now),
+   db().prepare("UPDATE budgets SET status='Convertido em pedido',data=?,updated_at=? WHERE id=? AND status!='Convertido em pedido'").bind(JSON.stringify({...budget.data,orderId,acceptedAt:now}),now,input.id),
+   db().prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at').bind(raw.user_id,JSON.stringify(profile),now)
+  ]);
+  const created=await db().prepare('SELECT * FROM orders WHERE id=?').bind(orderId).first<any>();
+  if(created)await recordEvent(unpackOrder(created),'Recebido',member.userId);
+  return json({ok:true});
+ }
  return null;
 }
