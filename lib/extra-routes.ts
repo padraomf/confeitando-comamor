@@ -155,7 +155,7 @@ export async function extraRoutes(req:Request,path:string){
    const {reserveStock}=await import('./stock');
    await db().batch([
      db().prepare('INSERT INTO orders(id,user_id,request_id,code,data,total,status,payment,payment_status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(orderId,profileId,crypto.randomUUID(),code,JSON.stringify(orderData),total,status,input.payment,paymentStatus,timestamp),
-     ...reserveStock(orderId,enrichedItems)
+     ...(input.customOrder ? [] : reserveStock(orderId,enrichedItems))
    ]);
    
    const {recordEvent}=await import('./order-events');
