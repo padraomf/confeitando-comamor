@@ -157,7 +157,7 @@ export default function Storefront({
     [addressModal, setAddressModal] = useState(false),
     [quote, setQuote] = useState<Quote | null>(null),
     [delivery, setDelivery] = useState("delivery"),
-    [payment, setPayment] = useState("cash"),
+    [payment, setPayment] = useState(""),
     [itemNotes, setItemNotes] = useState<Record<string, string>>({}),
     [note, setNote] = useState(""),
     [change, setChange] = useState(""),
@@ -180,13 +180,6 @@ export default function Storefront({
       setConfig(r.settings);
       setDemo(r.demo);
       setOnline(r.onlinePayment);
-      setPayment(
-        r.settings.cash
-          ? "cash"
-          : r.onlinePayment || r.settings.pixKey
-            ? "pix"
-            : "card_machine",
-      );
       setSignedIn(r.signedIn);
       if (r.customerName) setProfile((p) => ({ ...p, name: r.customerName }));
       if (
@@ -619,11 +612,8 @@ export default function Storefront({
   };
   const prepaid = delivery === "pickup" && config.pickupPrepaid;
   useEffect(() => {
-    if (!paymentAllowed(config, delivery, payment as PaymentMethod, online)) {
-      const next = (["pix", "card", "cash", "card_machine"] as const).find(
-        (p) => paymentAllowed(config, delivery, p, online),
-      );
-      if (next) setPayment(next);
+    if (payment && !paymentAllowed(config, delivery, payment as PaymentMethod, online)) {
+      setPayment("");
     }
   }, [config, delivery, payment, online]);
   const deliveryOptions = (
