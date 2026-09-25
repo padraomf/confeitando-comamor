@@ -101,7 +101,7 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
  }
  if(path==='admin/budget-convert'&&method==='POST'){
   const member=await panelUser(req);if(!member)throw new HttpError(401,'Entre no painel.');
-  const input=z.object({id:z.string().uuid()}).parse(await body());
+  const input=z.object({id:z.string().uuid(), advancePayment: z.number().int().min(0).optional()}).parse(await body());
   const raw=await db().prepare('SELECT * FROM budgets WHERE id=?').bind(input.id).first<any>();if(!raw)throw new HttpError(404,'Orçamento não encontrado.');
   const budget=unpack(raw),offer=budget.data.offer;
   if(budget.status==='Convertido em pedido')throw new HttpError(422,'Já convertido.');
@@ -115,7 +115,16 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
    db().prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at').bind(raw.user_id,JSON.stringify(profile),now)
   ]);
   const created=await db().prepare('SELECT * FROM orders WHERE id=?').bind(orderId).first<any>();
-  if(created)await recordEvent(unpackOrder(created),'Recebido',member.userId);
+  if(created) {
+      let orderObj = unpackOrder(created) as any;
+      if (input.advancePayment && input.advancePayment > 0) {
+          const {receivePayment}=await import('./ledger');
+          await receivePayment(orderId, input.advancePayment, orderId+':advance', member.userId, 'cash');
+          const updated = await db().prepare('SELECT * FROM orders WHERE id=?').bind(orderId).first();
+          if(updated) orderObj = unpackOrder(updated as any) as any;
+      }
+      await recordEvent(orderObj,'Recebido',member.userId);
+  }
   return json({ok:true});
  }
  return null;

@@ -101,7 +101,8 @@ export async function extraRoutes(req:Request,path:string){
      customOrder:z.boolean().optional(),
      dueDate:z.string().optional(),
      orderDate:z.string().optional(),
-     discountPercentage:z.number().min(0).max(100).optional()
+     discountPercentage:z.number().min(0).max(100).optional(),
+     advancePayment:z.number().int().min(0).optional()
    }).parse(await req.json());
    
    let profileId=input.profile.id;
@@ -126,8 +127,12 @@ export async function extraRoutes(req:Request,path:string){
    const orderId=crypto.randomUUID();
    const code=orderId.slice(0,8).toUpperCase();
    const timestamp=input.orderDate ? new Date(input.orderDate + 'T12:00:00Z').getTime() : Date.now();
-   const status=input.paid?(input.delivery==='pickup'?'Pronto para retirada':'Em preparo'):'Recebido';
-   const paymentStatus=input.paid?'Pago':(input.delivery==='pickup'?'Pagar na retirada':'Pagar na entrega');
+   let status=input.paid?(input.delivery==='pickup'?'Pronto para retirada':'Em preparo'):'Recebido';
+   let paymentStatus=input.paid?'Pago':(input.delivery==='pickup'?'Pagar na retirada':'Pagar na entrega');
+   
+   if (!input.paid && input.advancePayment && input.advancePayment > 0) {
+      paymentStatus = 'Parcialmente pago';
+   }
    
    const orderData={
      items:enrichedItems,
@@ -161,6 +166,12 @@ export async function extraRoutes(req:Request,path:string){
    const {recordEvent}=await import('./order-events');
    const orderObj={id:orderId,user_id:profileId,code,data:orderData,total,status,payment:input.payment,payment_status:paymentStatus,created_at:timestamp} as any;
    try{await recordEvent(orderObj,'Recebido','pdv')}catch{/* WhatsApp pode estar offline */}
+   
+   if (!input.paid && input.advancePayment && input.advancePayment > 0) {
+     const {receivePayment}=await import('./ledger');
+     await receivePayment(orderId, input.advancePayment, orderId+':advance', a.userId, input.payment);
+   }
+
    if(input.paid){
      try{await recordEvent(orderObj,'Pago',a.userId)}catch{/* idem */}
    }

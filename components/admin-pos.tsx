@@ -30,7 +30,8 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
   const [fee, setFee] = useState('0,00');
   const [discount, setDiscount] = useState('');
   const [payment, setPayment] = useState<'pix' | 'cash' | 'card_machine'>('pix');
-  const [paid, setPaid] = useState(true);
+  const [paymentMode, setPaymentMode] = useState<'paid' | 'later' | 'advance'>('paid');
+  const [advancePayment, setAdvancePayment] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   
@@ -51,6 +52,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
   const discountPerc = Math.min(100, Math.max(0, Math.round(Number(discount)) || 0));
   const finalDiscount = Math.round(cartTotal * (discountPerc / 100));
   const total = cartTotal - finalDiscount + (delivery === 'delivery' ? finalFee : 0);
+  const advanceAmount = Math.round(Number(advancePayment.replace(',', '.')) * 100) || 0;
 
   function addToCart(p: Product) {
     setCart(current => {
@@ -194,7 +196,8 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
           payment,
           fee: delivery === 'delivery' ? finalFee : 0,
           discountPercentage: discountPerc > 0 ? discountPerc : undefined,
-          paid,
+          paid: paymentMode === 'paid' || (paymentMode === 'advance' && advanceAmount >= total),
+          advancePayment: paymentMode === 'advance' && advanceAmount > 0 && advanceAmount < total ? advanceAmount : undefined,
           note,
           googleMapsUrl: delivery === 'delivery' && googleMapsUrl ? googleMapsUrl : undefined,
           customOrder: orderType === 'custom',
@@ -377,14 +380,26 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
           {step === 'payment' && (
             <div className="form-stack">
               <Label>Status do Pagamento</Label>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button onClick={() => setPaid(true)} style={{ flex: 1, padding: '14px', border: paid ? '1px solid #59713e' : '1px solid #e7dbd2', background: paid ? '#edf3e8' : 'white', color: paid ? '#59713e' : '#927868', borderRadius: '8px', fontWeight: 500 }}>
-                  <Check size={16} style={{ display: 'inline', marginRight: '6px' }} /> Pedido já está pago
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <button onClick={() => setPaymentMode('paid')} style={{ flex: 1, minWidth: '140px', padding: '14px', border: paymentMode === 'paid' ? '1px solid #59713e' : '1px solid #e7dbd2', background: paymentMode === 'paid' ? '#edf3e8' : 'white', color: paymentMode === 'paid' ? '#59713e' : '#927868', borderRadius: '8px', fontWeight: 500 }}>
+                  <Check size={16} style={{ display: 'inline', marginRight: '6px' }} /> Já está pago
                 </button>
-                <button onClick={() => setPaid(false)} style={{ flex: 1, padding: '14px', border: !paid ? '1px solid #a43a57' : '1px solid #e7dbd2', background: !paid ? '#fff1f4' : 'white', color: !paid ? '#a43a57' : '#927868', borderRadius: '8px', fontWeight: 500 }}>
-                  <Store size={16} style={{ display: 'inline', marginRight: '6px' }} /> Cobrar depois / na entrega
+                <button onClick={() => setPaymentMode('later')} style={{ flex: 1, minWidth: '140px', padding: '14px', border: paymentMode === 'later' ? '1px solid #a43a57' : '1px solid #e7dbd2', background: paymentMode === 'later' ? '#fff1f4' : 'white', color: paymentMode === 'later' ? '#a43a57' : '#927868', borderRadius: '8px', fontWeight: 500 }}>
+                  <Store size={16} style={{ display: 'inline', marginRight: '6px' }} /> Cobrar depois
                 </button>
+                {orderType === 'custom' && (
+                  <button onClick={() => setPaymentMode('advance')} style={{ flex: 1, minWidth: '140px', padding: '14px', border: paymentMode === 'advance' ? '1px solid #d49c6b' : '1px solid #e7dbd2', background: paymentMode === 'advance' ? '#fdf6f0' : 'white', color: paymentMode === 'advance' ? '#b87741' : '#927868', borderRadius: '8px', fontWeight: 500 }}>
+                    <Plus size={16} style={{ display: 'inline', marginRight: '6px' }} /> Adiantamento
+                  </button>
+                )}
               </div>
+
+              {paymentMode === 'advance' && (
+                <label className="field" style={{ marginTop: '16px' }}>
+                  <span>Valor do Adiantamento Recebido (R$)</span>
+                  <Input placeholder="0,00" value={advancePayment} onChange={e => setAdvancePayment(e.target.value)} />
+                </label>
+              )}
 
               <Label>Forma de Pagamento</Label>
               <Select value={payment} onValueChange={(v: any) => setPayment(v)}>
