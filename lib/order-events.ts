@@ -27,7 +27,7 @@ export async function advanceOrder(id:string,status:string,actor:string,pickupCo
  try{await db().batch([
   db().prepare('INSERT INTO commerce_guards(id,valid) SELECT ?,EXISTS(SELECT 1 FROM orders WHERE id=? AND status=? AND payment_status=? AND received=?)').bind(guard,id,o.status,o.payment_status,o.received??0),
   ...(status==='Cancelado'&&o.status==='Recebido'?[restoreStock(id)]:[]),
-  db().prepare('UPDATE orders SET status=? WHERE id=?').bind(status,id),
+  db().prepare((['Entregue','Retirado'].includes(status)&&!(o.data).deliveredAt) ? 'UPDATE orders SET status=?,data=? WHERE id=?' : 'UPDATE orders SET status=? WHERE id=?').bind(status, ...(['Entregue','Retirado'].includes(status)&&!(o.data).deliveredAt ? [JSON.stringify({...o.data,deliveredAt:Date.now()})] : []), id),
   db().prepare('DELETE FROM commerce_guards WHERE id=?').bind(guard)
  ])}catch{throw new HttpError(409,'O pedido mudou. Atualize a tela.');}
  await recordEvent({...o,status},status,actor);

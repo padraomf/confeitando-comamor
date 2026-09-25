@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {db,settings,unpackOrder,HttpError} from './server';
 import {statuses,type Order} from './commerce';
+export const dateTimeOrDate=z.string().regex(/^20\\d{2}-\\d{2}-\\d{2}(T\\d{2}:\\d{2})?$/,'Data/hora inválida.');
 export const dateOnly=z.string().regex(/^20\d{2}-\d{2}-\d{2}$/,'Informe uma data válida.').refine(v=>{const n=new Date(v+'T12:00:00Z');return Number.isFinite(n.getTime())&&n.toISOString().slice(0,10)===v},'Informe uma data válida.');
 export function localDay(time:number,zone:string){return new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(time))}
 export function dateBoundary(day:string,zone:string){dateOnly.parse(day);let time=Date.parse(day+'T00:00:00Z');for(let i=0;i<3;i++){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(time));const p=Object.fromEntries(parts.map(p=>[p.type,p.value]));const represented=Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);time+=Date.parse(day+'T00:00:00Z')-represented;}return time}

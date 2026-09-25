@@ -134,7 +134,7 @@ async function handler(req:Request){try{
  if(/^orders\/[^/]+\/print$/.test(path)&&method==='GET'){const id=path.split('/')[1];const user=await customer(req)||await guest(req);const member=await panelUser(req);if(member?.role==='production')throw new HttpError(403,'Impressão restrita ao atendimento');const isAdmin=!!member;if(!user&&!isAdmin)throw new HttpError(401,'Entre na sua conta para ver este pedido.');const raw:any=await db().prepare(isAdmin?'SELECT * FROM orders WHERE id=?':'SELECT * FROM orders WHERE id=? AND user_id=?').bind(...(isAdmin?[id]:[id,user!.userId])).first();if(!raw)throw new HttpError(404,'Pedido não encontrado');return receipt(unpackOrder(raw),await settings(),new URL(req.url).searchParams.get('paper')==='80mm'?'80mm':'a4')}
  if(path.startsWith('admin/')){
  const currentAdmin=await admin(req);
- if(currentAdmin.role!=='admin'&&!['admin/data','admin/order-feed','admin/order','admin/history','admin/budgets'].includes(path))throw new HttpError(403,'Seu acesso não permite alterar esta configuração.');
+ if(currentAdmin.role!=='admin'&&!['admin/data','admin/order-feed','admin/order','admin/history','admin/budgets','admin/order-date'].includes(path))throw new HttpError(403,'Seu acesso não permite alterar esta configuração.');
  if(currentAdmin.role==='production'&&['admin/history','admin/budgets'].includes(path))throw new HttpError(403,'Seu acesso é de produção.');
  if(path==='admin/data'&&method==='GET'){
  await initializeCatalog();const [store,items,s,orders,stats,cursor]=await Promise.all([settings(),products(true),secrets(),db().prepare("SELECT * FROM orders ORDER BY CASE WHEN status IN ('Concluído','Entregue','Retirado','Cancelado','Não retirado') THEN 1 ELSE 0 END,created_at DESC LIMIT 200").all<any>(),orderStats(),db().prepare('SELECT COALESCE(MAX(rowid),0) cursor FROM orders').first<any>()]);
@@ -168,6 +168,16 @@ async function handler(req:Request){try{
  if(input.paid){if(currentAdmin.role==='production')throw new HttpError(403,'Seu acesso não permite confirmar pagamentos.');if(['Cancelado','Não retirado'].includes(raw.status))throw new HttpError(422,'Pedido encerrado');if(!manualPayment(unpackOrder(raw))&&currentAdmin.role!=='admin')throw new HttpError(422,'O pagamento online é confirmado pelo provedor');if(input.amount){if(!input.requestId)throw new HttpError(422,'Atualize a tela antes de receber.');await receivePayment(input.id,input.amount,input.id+':manual:'+input.requestId,currentAdmin.userId)}else await setPaid(input.id,'manual',currentAdmin.userId)}
  if(input.refund){if(currentAdmin.role!=='admin')throw new HttpError(403,'Registre aqui apenas devoluções manuais confirmadas pela responsável.');if(!manualPayment(unpackOrder(raw))&&currentAdmin.role!=='admin')throw new HttpError(422,'Devoluções online são processadas pelo provedor');if(!input.requestId||!input.amount)throw new HttpError(422,'Informe o valor devolvido.');await manualRefund(input.id,input.amount,input.requestId,currentAdmin.userId)}
  if(input.status){if(currentAdmin.role==='production'&&!['Em preparo','Pronto para retirada','Pronto para entrega'].includes(input.status))throw new HttpError(403,'Seu acesso permite apenas etapas de produção.');await advanceOrder(input.id,input.status,currentAdmin.userId,input.pickupCode)}return json({ok:true})}
+ if(path==='admin/order-date'&&method==='PATCH'){
+   const input=z.object({id:z.string().uuid(),dueDate:z.string()}).parse(await body(req));
+   const raw:any=await db().prepare('SELECT * FROM orders WHERE id=?').bind(input.id).first();
+   if(!raw)throw new HttpError(404,'Pedido não encontrado');
+   if(currentAdmin.role!=='admin')throw new HttpError(403,'Sem permissão.');
+   const order=unpackOrder(raw);
+   order.data.dueDate = input.dueDate;
+   await db().prepare('UPDATE orders SET data=? WHERE id=?').bind(JSON.stringify(order.data), input.id).run();
+   return json({ok:true});
+ }
  if(path==='admin/order-items'&&method==='POST'){
   const input=z.object({id:z.string().uuid(),name:z.string().trim().min(2).max(100),price:z.number().int().min(0),quantity:z.number().int().min(1).max(100)}).parse(await body(req));
   const raw:any=await db().prepare('SELECT * FROM orders WHERE id=?').bind(input.id).first();
