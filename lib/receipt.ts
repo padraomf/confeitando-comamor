@@ -4,7 +4,8 @@ import {collectionInfo,destinationUrl,paymentLabel} from './order-display';
 import {qrSvg} from './qr';
 
 export function receipt(order:Order,store:StoreSettings|string,paper:'80mm'|'a4'='80mm'){
- const storeAddress=typeof store==='string'?store:store.storeAddress,storeName=typeof store==='string'?(order.data.storeName||'Confeitando com Amor'):store.name,phone=typeof store==='string'?'':store.whatsapp;\n const displayPhone=phone.startsWith('55')&&phone.length>=12?phone.slice(2):phone;
+ const storeAddress=typeof store==='string'?store:store.storeAddress,storeName=typeof store==='string'?(order.data.storeName||'Confeitando com Amor'):store.name,phone=typeof store==='string'?'':store.whatsapp;
+ const displayPhone=phone.startsWith('55')&&phone.length>=12?phone.slice(2):phone;
  const e=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
  const nonce=crypto.randomUUID().replaceAll('-',''),subtotal=order.data.items.reduce((n,i)=>n+i.price*i.quantity,0);
  const route=destinationUrl(order),qr=route?qrSvg(route):'',collection=collectionInfo(order),hasManualMap=!!(order.data as any).googleMapsUrl;
