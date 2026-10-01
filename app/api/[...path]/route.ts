@@ -204,6 +204,64 @@ async function handler(req:Request){try{
   ]);
   return json({ok:true});
  }
+  // ── Costs management ──
+  if(path==='admin/costs'&&method==='GET'){
+   if(currentAdmin.role!=='admin')throw new HttpError(403,'Acesso restrito.');
+   const url=new URL(req.url);const month=url.searchParams.get('month')||'0';const year=url.searchParams.get('year')||String(new Date().getFullYear());const status=url.searchParams.get('status')||'Todos';
+   let rows;
+   if(month==='0'){rows=await db().prepare('SELECT * FROM costs WHERE purchase_date LIKE ? OR (paid=0) ORDER BY paid ASC, due_date ASC').bind(year+'-%').all<any>()}
+   else{const mm=month.padStart(2,'0');rows=await db().prepare('SELECT * FROM costs WHERE (purchase_date LIKE ?) OR (paid=0 AND purchase_date < ?) ORDER BY paid ASC, due_date ASC').bind(year+'-'+mm+'-%',year+'-'+mm+'-01').all<any>()}
+   let results=rows.results;
+   if(status==='Pago')results=results.filter((c:any)=>c.paid===1);
+   else if(status==='Não pago')results=results.filter((c:any)=>c.paid===0);
+   return json({costs:results});
+  }
+  if(path==='admin/costs'&&method==='POST'){
+   if(currentAdmin.role!=='admin')throw new HttpError(403,'Acesso restrito.');
+   const input=z.object({id:z.string().uuid().optional(),description:z.string().trim().min(2).max(200),purchaseDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),amount:z.number().int().positive().max(100000000),dueDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/)}).parse(await body(req));
+   const id=input.id??crypto.randomUUID();
+   if(input.id){await db().prepare('UPDATE costs SET description=?,purchase_date=?,amount=?,due_date=? WHERE id=?').bind(input.description,input.purchaseDate,input.amount,input.dueDate,id).run()}
+   else{await db().prepare('INSERT INTO costs(id,description,purchase_date,amount,due_date,created_at) VALUES(?,?,?,?,?,?)').bind(id,input.description,input.purchaseDate,input.amount,input.dueDate,Date.now()).run()}
+   return json({id});
+  }
+  if(path==='admin/costs'&&method==='PATCH'){
+   if(currentAdmin.role!=='admin')throw new HttpError(403,'Acesso restrito.');
+   const input=z.object({id:z.string().uuid(),paid:z.boolean()}).parse(await body(req));
+   await db().prepare('UPDATE costs SET paid=?,paid_at=? WHERE id=?').bind(input.paid?1:0,input.paid?Date.now():null,input.id).run();
+   return json({ok:true});
+  }
+  if(path==='admin/costs'&&method==='DELETE'){
+   if(currentAdmin.role!=='admin')throw new HttpError(403,'Acesso restrito.');
+   const {id}=z.object({id:z.string().uuid()}).parse(await body(req));
+   await db().prepare('DELETE FROM costs WHERE id=?').bind(id).run();
+   return json({ok:true});
+  }
+  if(path==='admin/costs/export'&&method==='GET'){
+   if(currentAdmin.role!=='admin')throw new HttpError(403,'Acesso restrito.');
+   const url=new URL(req.url);const month=url.searchParams.get('month')||'0';const year=url.searchParams.get('year')||String(new Date().getFullYear());const status=url.searchParams.get('status')||'Todos';const format=url.searchParams.get('format')||'csv';const scope=url.searchParams.get('scope')||'filtered';
+   let rows;
+   if(scope==='all'){rows=await db().prepare('SELECT * FROM costs ORDER BY paid ASC, due_date ASC').all<any>()}
+   else if(scope==='paid'){rows=await db().prepare('SELECT * FROM costs WHERE paid=1 ORDER BY due_date ASC').all<any>()}
+   else if(scope==='unpaid'){rows=await db().prepare('SELECT * FROM costs WHERE paid=0 ORDER BY due_date ASC').all<any>()}
+   else{
+    if(month==='0'){rows=await db().prepare('SELECT * FROM costs WHERE purchase_date LIKE ? OR (paid=0) ORDER BY paid ASC, due_date ASC').bind(year+'-%').all<any>()}
+    else{const mm=month.padStart(2,'0');rows=await db().prepare('SELECT * FROM costs WHERE (purchase_date LIKE ?) OR (paid=0 AND purchase_date < ?) ORDER BY paid ASC, due_date ASC').bind(year+'-'+mm+'-%',year+'-'+mm+'-01').all<any>()}
+    if(status==='Pago')rows.results=rows.results.filter((c:any)=>c.paid===1);
+    else if(status==='Não pago')rows.results=rows.results.filter((c:any)=>c.paid===0);
+   }
+   const costs=rows.results as any[];
+   const total=costs.reduce((s:number,c:any)=>s+c.amount,0);
+   const fmt=(d:string)=>{const [y,m,day]=d.split('-');return `${day}/${m}/${y}`};
+   const moneyFmt=(v:number)=>(v/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+   if(format==='csv'){
+    const bom='\uFEFF';const header='Descrição;Data da compra;Valor;Vencimento;Status\n';
+    const lines=costs.map((c:any)=>`"${c.description}";"${fmt(c.purchase_date)}";"${moneyFmt(c.amount)}";"${fmt(c.due_date)}";"${c.paid?'Pago':'Não pago'}"`).join('\n');
+    const footer='\n\nTotal;;"'+moneyFmt(total)+'"';
+    return new Response(bom+header+lines+footer,{headers:{'Content-Type':'text/csv;charset=utf-8','Content-Disposition':'attachment;filename="custos.csv"','Cache-Control':'no-store'}});
+   }
+   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Custos - Confeitando com Amor</title><style>*{margin:0;box-sizing:border-box}body{font-family:Georgia,serif;padding:40px;color:#4b322d}h1{font-size:28px;margin-bottom:8px}p.sub{font-size:14px;color:#987e6d;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}th{background:#f7e9e9;text-align:left;padding:10px 12px;border-bottom:2px solid #eaden7;color:#ab3858;font-weight:600}td{padding:10px 12px;border-bottom:1px solid #eee}tr:nth-child(even){background:#fdfaf7}.paid{color:#59713e}.unpaid{color:#ab3858;font-weight:600}.total-row{font-weight:700;font-size:16px;border-top:2px solid #ab3858}@media print{body{padding:20px}}</style></head><body><h1>Custos da Confeitaria</h1><p class="sub">Gerado em ${new Date().toLocaleString('pt-BR')}</p><table><thead><tr><th>Descrição</th><th>Data da compra</th><th>Valor</th><th>Vencimento</th><th>Status</th></tr></thead><tbody>${costs.map((c:any)=>`<tr><td>${c.description}</td><td>${fmt(c.purchase_date)}</td><td>${moneyFmt(c.amount)}</td><td>${fmt(c.due_date)}</td><td class="${c.paid?'paid':'unpaid'}">${c.paid?'Pago':'Não pago'}</td></tr>`).join('')}<tr class="total-row"><td colspan="2">Total</td><td colspan="3">${moneyFmt(total)}</td></tr></tbody></table></body></html>`;
+   return new Response(html,{headers:{'Content-Type':'text/html;charset=utf-8','Cache-Control':'no-store'}});
+  }
  }
  if(path==='purge-whatsapp'&&method==='GET'){
  await db().prepare("UPDATE whatsapp_outbox SET status='skipped', detail='Cancelado' WHERE status IN ('queued', 'processing')").run();

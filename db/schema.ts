@@ -27,5 +27,7 @@ export const whatsappOutbox=sqliteTable('whatsapp_outbox',{event:text('event').n
 export const receipts=sqliteTable('payment_receipts',{id:text('id').primaryKey(),orderId:text('order_id').notNull().references(()=>orders.id,{onDelete:'cascade'}),amount:integer('amount').notNull(),kind:text('kind').notNull(),method:text('method').notNull(),provider:text('provider').notNull(),actor:text('actor').notNull(),occurredAt:integer('occurred_at').notNull()},t=>[index('receipts_order_date').on(t.orderId,t.occurredAt),index('receipts_date').on(t.occurredAt)]);
 export const cardAttempts=sqliteTable('card_attempts',{orderId:text('order_id').primaryKey().references(()=>orders.id,{onDelete:'cascade'}),attemptId:text('attempt_id').notNull(),tokenHash:text('token_hash').notNull(),state:text('state').notNull(),providerId:text('provider_id'),updatedAt:integer('updated_at').notNull()});
 
+export const costs=sqliteTable('costs',{id:text('id').primaryKey(),description:text('description').notNull(),purchaseDate:text('purchase_date').notNull(),amount:integer('amount').notNull(),dueDate:text('due_date').notNull(),paid:integer('paid').notNull().default(0),paidAt:integer('paid_at'),createdAt:integer('created_at').notNull()},t=>[index('costs_created').on(t.createdAt)]);
+
 // A failed guard aborts the complete D1 batch, without relying on SQL triggers.
 export const commerceGuards=sqliteTable('commerce_guards',{id:text('id').primaryKey(),valid:integer('valid').notNull()},t=>[check('commerce_guard_valid',sql`${t.valid}=1`)]);
