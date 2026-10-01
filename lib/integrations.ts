@@ -14,7 +14,7 @@ export async function checkoutLink(order:Order, reqOrigin?:string){
  if((provider==='mercadopago'||provider==='picpay')&&order.payment==='pix'){await nativePix(order,s,origin);return '';}
  if(provider==='mercadopago'&&order.payment==='card'&&s.mpPublicKey){await db().prepare("UPDATE orders SET data=json_set(data,'$.embeddedCard',json('true')) WHERE id=?").bind(order.id).run();return '';}
  if(provider==='pagbank')return pagbankCheckout(order,s.pbToken,origin);
- const payload={items:[...order.data.items.map(i=>({id:i.id,title:i.name,quantity:i.quantity,unit_price:i.price/100,currency_id:'BRL'})),...(order.data.fee?[{id:'delivery',title:'Taxa de entrega',quantity:1,unit_price:order.data.fee/100,currency_id:'BRL'}]:[])],external_reference:order.id,notification_url:origin+'/api/webhooks/mercadopago',back_urls:{success:origin+'/pedidos',failure:origin+'/pedidos',pending:origin+'/pedidos'},auto_return:'approved',payment_methods:{excluded_payment_types:order.payment==='card'?[{id:'ticket'},{id:'bank_transfer'},{id:'atm'}]:[{id:'credit_card'},{id:'debit_card'},{id:'ticket'},{id:'atm'}]},expires:true,expiration_date_to:new Date(Date.now()+86400000).toISOString()};
+ const payload={items:order.data.checkoutAmount&&order.data.checkoutAmount!==order.total?[{id:'deposit',title:'Sinal da encomenda #'+order.code,quantity:1,unit_price:order.data.checkoutAmount/100,currency_id:'BRL'}]:[...order.data.items.map(i=>({id:i.id,title:i.name,quantity:i.quantity,unit_price:i.price/100,currency_id:'BRL'})),...(order.data.fee?[{id:'delivery',title:'Taxa de entrega',quantity:1,unit_price:order.data.fee/100,currency_id:'BRL'}]:[])],external_reference:order.id,notification_url:origin+'/api/webhooks/mercadopago',back_urls:{success:origin+'/pedidos',failure:origin+'/pedidos',pending:origin+'/pedidos'},auto_return:'approved',payment_methods:{excluded_payment_types:order.payment==='card'?[{id:'ticket'},{id:'bank_transfer'},{id:'atm'}]:[{id:'credit_card'},{id:'debit_card'},{id:'ticket'},{id:'atm'}]},expires:true,expiration_date_to:new Date(Date.now()+86400000).toISOString()};
  const p=await fetchJSON('https://api.mercadopago.com/checkout/preferences',{method:'POST',headers:{Authorization:`Bearer ${s.mpToken}`,'Content-Type':'application/json','X-Idempotency-Key':order.id},body:JSON.stringify(payload)});
  if(typeof p.init_point!=='string'||!/^https:\/\/([a-z0-9-]+\.)*mercadopago\.(com|com\.br)\//.test(p.init_point))throw new HttpError(502,'Não foi possível abrir o pagamento.');
  await db().prepare('UPDATE orders SET checkout_url=? WHERE id=?').bind(p.init_point,order.id).run();return p.init_point;
@@ -47,15 +47,17 @@ export async function paymentWebhook(req:Request){
  const valid=await crypto.subtle.verify('HMAC',key,new Uint8Array(v1.match(/../g)!.map((h:string)=>parseInt(h,16))),new TextEncoder().encode(`id:${id};request-id:${requestId};ts:${ts};`));if(!valid)throw new HttpError(401,'Assinatura inválida');
  const p=await fetchJSON(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${s.mpToken}`}});
  const raw:any=await db().prepare('SELECT * FROM orders WHERE id=?').bind(String(p.external_reference??'')).first();if(!raw)return;
- const order=unpackOrder(raw);if(order.data.paymentProvider&&order.data.paymentProvider!=='mercadopago')throw new HttpError(409,'Provedor incompatível');if(order.payment==='cash'||p.currency_id!=='BRL'||Math.round(Number(p.transaction_amount)*100)!==order.total)throw new HttpError(409,'Pagamento incompatível');
+ const order=unpackOrder(raw);if(order.data.paymentProvider&&order.data.paymentProvider!=='mercadopago')throw new HttpError(409,'Provedor incompatível');const expectedAmount=order.data.checkoutAmount||order.total;const paidAmount=Math.round(Number(p.transaction_amount)*100);if(order.payment==='cash'||p.currency_id!=='BRL'||paidAmount!==expectedAmount)throw new HttpError(409,'Pagamento incompatível');
  if(order.data.embeddedCard)await db().prepare('UPDATE card_attempts SET state=?,provider_id=?,updated_at=? WHERE order_id=?').bind(p.status,String(p.id),Date.now(),order.id).run();
  if(p.status==='approved'&&Number(p.transaction_amount_refunded)>0){await reconcileRefund(order.id,String(p.id),Math.round(Number(p.transaction_amount_refunded)*100),'Estornado');return}
- if(['approved','refunded','charged_back'].includes(p.status)){const status=p.status==='approved'?'Pago':p.status==='refunded'?'Estornado':'Contestado';if(status==='Pago')await setPaid(order.id,String(p.id));else await reconcileRefund(order.id,String(p.id),p.status==='refunded'?Math.round(Number(p.transaction_amount_refunded??p.transaction_amount)*100):order.total,status as 'Estornado'|'Contestado')}
+ if(['approved','refunded','charged_back'].includes(p.status)){const status=p.status==='approved'?'Pago':p.status==='refunded'?'Estornado':'Contestado';if(status==='Pago')await setPaid(order.id,String(p.id),'provedor',paidAmount);else await reconcileRefund(order.id,String(p.id),p.status==='refunded'?Math.round(Number(p.transaction_amount_refunded??p.transaction_amount)*100):paidAmount,status as 'Estornado'|'Contestado')}
 }
 
 async function pagbankCheckout(order:Order,token:string,origin:string){
  const notification=origin+'/api/webhooks/pagbank';
- const result=await fetchJSON('https://api.pagseguro.com/checkouts',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','x-idempotency-key':order.id},body:JSON.stringify({reference_id:order.id,items:order.data.items.map(i=>({reference_id:i.id,name:i.name,quantity:i.quantity,unit_amount:i.price})),additional_amount:order.data.fee,payment_methods:[{type:order.payment==='pix'?'PIX':'CREDIT_CARD'}],payment_notification_urls:[notification],redirect_url:origin+'/pedidos',return_url:origin+'/pedidos'})});
+ const payloadItems=order.data.checkoutAmount&&order.data.checkoutAmount!==order.total?[{reference_id:'deposit',name:'Sinal da encomenda #'+order.code,quantity:1,unit_amount:order.data.checkoutAmount}]:order.data.items.map(i=>({reference_id:i.id,name:i.name,quantity:i.quantity,unit_amount:i.price}));
+ const additional_amount=order.data.checkoutAmount&&order.data.checkoutAmount!==order.total?0:order.data.fee;
+ const result=await fetchJSON('https://api.pagseguro.com/checkouts',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','x-idempotency-key':order.id},body:JSON.stringify({reference_id:order.id,items:payloadItems,additional_amount,payment_methods:[{type:order.payment==='pix'?'PIX':'CREDIT_CARD'}],payment_notification_urls:[notification],redirect_url:origin+'/pedidos',return_url:origin+'/pedidos'})});
  const url=result.links?.find((l:any)=>l.rel==='PAY')?.href;
  if(typeof url!=='string'||!/^https:\/\/([a-z0-9-]+\.)*(pagseguro\.uol\.com\.br|pagbank\.com\.br)\//.test(url))throw new HttpError(502,'Não foi possível abrir o pagamento PagBank');
  await db().prepare('UPDATE orders SET checkout_url=? WHERE id=?').bind(url,order.id).run();return url;
@@ -67,8 +69,9 @@ export async function pagbankWebhook(req:Request){
  const notice=JSON.parse(rawBody);if(typeof notice.id!=='string'||!/^ORDE_[a-zA-Z0-9-]+$/.test(notice.id))return;
  const payment=await fetchJSON('https://api.pagseguro.com/orders/'+encodeURIComponent(notice.id),{headers:{Authorization:'Bearer '+s.pbToken}});
  const raw:any=await db().prepare('SELECT * FROM orders WHERE id=?').bind(String(payment.reference_id??'')).first();if(!raw)return;const order=unpackOrder(raw);if(order.payment==='cash'||order.data.paymentProvider!=='pagbank')throw new HttpError(409,'Provedor incompatível');
- const charge=payment.charges?.find((c:any)=>c.status==='PAID'&&c.amount?.value===order.total&&c.amount?.currency==='BRL');
- if(charge)await setPaid(order.id,charge.id);
+ const expectedAmount=order.data.checkoutAmount||order.total;
+ const charge=payment.charges?.find((c:any)=>c.status==='PAID'&&c.amount?.value===expectedAmount&&c.amount?.currency==='BRL');
+ if(charge)await setPaid(order.id,charge.id,'provedor',expectedAmount);
  else if(payment.charges?.some((c:any)=>c.status==='PAID'))throw new HttpError(409,'Pagamento incompatível');
- else if(order.payment_id&&payment.charges?.some((c:any)=>c.id===order.payment_id&&c.status==='CANCELED'))await reconcileRefund(order.id,order.payment_id,order.total,'Estornado');
+ else if(order.payment_id&&payment.charges?.some((c:any)=>c.id===order.payment_id&&c.status==='CANCELED'))await reconcileRefund(order.id,order.payment_id,expectedAmount,'Estornado');
 }

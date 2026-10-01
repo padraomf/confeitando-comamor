@@ -7,10 +7,11 @@ import type {Order} from './commerce';
 import {statuses} from './commerce';
 import {nextSteps} from './order-flow';
 export async function recordEvent(order:Order,event:string,actor:string){const res=await db().prepare('INSERT OR IGNORE INTO order_events(id,order_id,event,actor,created_at) VALUES(?,?,?,?,?)').bind(order.id+':'+event,order.id,event,actor,Date.now()).run();if(res.meta.changes>0){if(event==='Pago'||(statuses.includes(event)&&!['Em preparo','Pronto para entrega'].includes(event)))await queueWhatsApp(order,event);}}
-export async function setPaid(id:string,paymentId:string,actor='provedor'){
+export async function setPaid(id:string,paymentId:string,actor='provedor',amount?:number){
  const raw=await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first<any>();if(!raw)return;
  const o:Order=unpackOrder(raw);if(['Estornado','Contestado','Estorno parcial'].includes(o.payment_status))return;
- if(remainingAmount(o)>0)await receivePayment(id,remainingAmount(o),id+':online-paid',actor);
+ const toPay=amount??remainingAmount(o);
+ if(toPay>0&&toPay<=remainingAmount(o))await receivePayment(id,toPay,id+':online-paid'+(amount?':'+amount:''),actor);
  await db().prepare('UPDATE orders SET payment_id=? WHERE id=?').bind(paymentId,id).run();
  const latest=unpackOrder(await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first());
  if(latest.payment_status==='Pago')await recordEvent(latest,'Pago',actor);
