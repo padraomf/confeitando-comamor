@@ -1348,16 +1348,10 @@ export default function Storefront({
                         },
                         {
                           id: "card_machine",
-                          label:
-                            delivery === "pickup"
-                              ? "Maquininha na retirada"
-                              : "Maquininha na entrega",
-                          text:
-                            delivery === "pickup"
-                              ? "Pague ao retirar na confeitaria"
-                              : "O entregador levará a maquininha",
+                          label: "Maquininha na retirada",
+                          text: "Pague ao retirar na confeitaria",
                           icon: CreditCard,
-                          enabled: config.cardOnDelivery && !prepaid,
+                          enabled: delivery === "pickup" && config.cardOnDelivery && !prepaid,
                         },
                         {
                           id: "cash",

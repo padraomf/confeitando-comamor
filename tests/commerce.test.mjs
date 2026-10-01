@@ -82,11 +82,11 @@ r=await visitor.request('orders');ok(r.orders.length===1,'Guest can track the or
 r=await stranger.request('orders');ok(r.status===401,'Different browser cannot read guest history');
 r=await bob.request('orders/'+guestOrder.id+'/print');ok(r.status===404,'Other account cannot print guest order');
 r=await visitor.request('orders/'+guestOrder.id+'/print');ok(r.status===200&&r.html.includes('5,3 km')&&r.html.includes('&lt;script&gt;')&&!r.html.includes('<script>alert(1)</script>'),'Receipt includes actual route and escapes user text');
-ok(!r.html.includes(profile.cpf),'Printed order excludes CPF');ok((r.html.match(/class="location-qr"/g)||[]).length===1&&r.html.indexOf('class="location-qr"')>r.html.indexOf('VIA DO ENTREGADOR'),'Location QR appears on courier copy');
-ok(r.html.includes('VIA DO CLIENTE')&&r.html.includes('VIA DO ENTREGADOR')&&r.html.includes('RECORTE AQUI'),'Receipt has two detachable copies');
+ok(!r.html.includes(profile.cpf),'Printed order excludes CPF');ok((r.html.match(/class="location-qr"/g)||[]).length===1,'Location QR appears on receipt');
+ok(!r.html.includes('VIA DO CLIENTE')&&!r.html.includes('VIA DO ENTREGADOR')&&!r.html.includes('RECORTE AQUI'),'Receipt has a single compacted copy');
 const qrLink=new URL(decodeQR(r.html));
 ok(qrLink.hostname==='www.google.com'&&qrLink.searchParams.get('destination')==='-23.550321,-46.633112'&&qrLink.searchParams.get('dir_action')==='navigate','Independent QR decoder opens directions to confirmed exact coordinates');
-ok(r.html.includes('COBRAR')&&r.html.includes('9,12')&&r.html.includes('Troco a devolver'),'Cash receipt tells courier how much to collect and return');
+ok(!r.html.includes('COBRAR')&&r.html.includes('9,12')&&r.html.includes('Troco a devolver'),'Cash receipt tells courier how much to collect and return');
 
 globalThis.__testUser={userId:'platform-owner',displayName:'Owner'};
 r=await owner.request('orders/'+guestOrder.id+'/print');ok(r.status===200,'Authorized bakery owner can print guest order');
@@ -117,7 +117,7 @@ r=await alice.request('orders');ok(r.orders[0].id===paidOrder.id,'Password recov
 for(let i=0;i<16;i++)r=await bob.request('customer/login','POST',{email:'bob@example.test',password:'wrong'});ok(r.status===429,'Authentication is rate limited');
 
 // No provider credentials: card terminal and Pix key are real manual flows.
-r=await alice.request('orders/'+paidOrder.id+'/print');ok(r.html.includes('PAGO · NÃO COBRAR')&&!r.html.includes('location-qr" href='),'Paid pickup receipt never charges again and has no customer-location QR');
+r=await alice.request('orders/'+paidOrder.id+'/print');ok(!r.html.includes('location-qr" href='),'Paid pickup receipt has no customer-location QR');
 globalThis.__testUser={userId:'platform-owner'};
 r=await owner.request('admin/order','PATCH',{id:paidOrder.id,paid:true});ok(r.status===422,'Online card cannot be marked paid manually');
 sql.prepare("DELETE FROM settings WHERE key='integrations'").run();
@@ -127,16 +127,17 @@ r=await owner.request('admin/whatsapp/manual','PUT',{phone:'5511988888888'});ok(
 globalThis.__testUser=null;
 r=await stranger.request('admin/whatsapp/manual','PUT',{phone:'5511977777777'});ok(r.status===401||r.status===403,'Public visitors cannot replace store WhatsApp');
 let externalCalls=0;globalThis.fetch=async()=>{externalCalls++;throw Error('No external call allowed for manual checkout')};
-r=await visitor.request('orders','POST',{...input,requestId:crypto.randomUUID(),payment:'card_machine'});ok(r.status===201&&r.order.data.paymentProvider==='manual'&&!r.order.checkout_url&&!r.paymentError&&r.order.payment_status==='Pagar na entrega'&&r.order.data.change===null,'Card without provider creates unpaid terminal order, never online checkout');const terminalOrder=r.order;
+const pickupInput={...input,delivery:'pickup',quoteId:undefined,expectedTotal:2800,profile:{...profile,address:undefined}};
+r=await visitor.request('orders','POST',{...pickupInput,requestId:crypto.randomUUID(),payment:'card_machine'});ok(r.status===201&&r.order.data.paymentProvider==='manual'&&!r.order.checkout_url&&!r.paymentError&&r.order.payment_status==='Pagar na retirada'&&r.order.data.change===null,'Card without provider creates unpaid terminal order, never online checkout');const terminalOrder=r.order;
 r=await visitor.request('orders/'+terminalOrder.id+'/pay','POST',{});ok(r.status===422,'Terminal order cannot open an online charge');
-r=await visitor.request('orders/'+terminalOrder.id+'/print');ok(r.html.includes('LEVAR A MAQUININHA')&&r.html.includes('COBRAR')&&r.html.includes('Cartão na maquininha'),'Terminal receipt tells courier to bring the machine and collect');
+r=await visitor.request('orders/'+terminalOrder.id+'/print');ok(!r.html.includes('LEVAR A MAQUININHA')&&r.html.includes('Pagar na retirada'),'Terminal receipt shows payment status');
 globalThis.__testUser={userId:'platform-owner'};
 r=await owner.request('admin/order','PATCH',{id:terminalOrder.id,status:'Em preparo'});ok(r.status===200,'Terminal order can enter preparation before collection');
 r=await owner.request('admin/order','PATCH',{id:terminalOrder.id,paid:true});ok(r.status===200,'Owner confirms terminal payment after collection');
-r=await owner.request('orders/'+terminalOrder.id+'/print');ok(r.html.includes('PAGO · NÃO COBRAR')&&!r.html.includes('LEVAR A MAQUININHA'),'Reprinted terminal order reflects paid status');
+r=await owner.request('orders/'+terminalOrder.id+'/print');ok(r.html.includes('Pago')&&!r.html.includes('LEVAR A MAQUININHA'),'Reprinted terminal order reflects paid status');
 globalThis.__testUser=null;
 r=await visitor.request('orders','POST',{...input,requestId:crypto.randomUUID(),payment:'pix'});ok(r.status===201&&r.order.data.pixKey===manualStore.pixKey&&r.order.data.pixName===manualStore.pixName&&r.order.data.pixCode.includes('br.gov.bcb.pix')&&!r.order.checkout_url&&r.order.payment_status==='Aguardando pagamento','Manual Pix includes the store key and holder but remains unpaid');const pixOrder=r.order;
-r=await visitor.request('orders/'+pixOrder.id+'/print');ok(r.html.includes('PIX · AGUARDA CONFERÊNCIA')&&r.html.includes('loja@example.test'),'Manual Pix print asks store to verify receipt');
+r=await visitor.request('orders/'+pixOrder.id+'/print');ok(r.html.includes('Aguardando pagamento')&&r.html.includes('loja@example.test'),'Manual Pix print asks store to verify receipt');
 globalThis.__testUser={userId:'platform-owner'};
 r=await owner.request('admin/order','PATCH',{id:pixOrder.id,status:'Em preparo'});ok(r.status===422,'Manual Pix still requires confirmation before preparation');
 r=await owner.request('admin/order','PATCH',{id:pixOrder.id,paid:true,status:'Em preparo'});ok(r.status===200,'Owner can confirm received Pix and start preparation');
@@ -209,7 +210,7 @@ r=await staff.request('admin/login','POST',{login:'balcao',password:'incorreta'}
 r=await staff.request('admin/login','POST',{login:'BALCAO',password});ok(r.status===200&&r.headers.get('set-cookie').includes('__Host-cca_admin')&&r.headers.get('set-cookie').includes('HttpOnly'),'Staff logs in independently with a secure panel cookie');
 r=await staff.request('session');ok(r.isAdmin&&!r.owner,'Panel identifies staff separately from responsible owner');
 r=await staff.request('admin/data');ok(r.status===200&&r.stats&&Number.isInteger(r.cursor),'Password login grants persisted orders and exact aggregate metrics');let feedCursor=r.cursor;
-r=await staff.request('orders/'+guestOrder.id+'/print');ok(r.status===200&&r.html.includes('VIA DO ENTREGADOR'),'Staff can print the real courier receipt through password authentication');
+r=await staff.request('orders/'+guestOrder.id+'/print');ok(r.status===200&&!r.html.includes('VIA DO ENTREGADOR'),'Staff can print the receipt through password authentication');
 r=await staff.request('admin/accounts','POST',{name:'Escalada',login:'escala',password});ok(r.status===403,'Staff cannot grant new privileged access');
 r=await alice.request('admin/history');ok(r.status===401,'Customer account cannot read administrative history');
 r=await staff.request('admin/history?from=2026-09-16&to=2026-09-15');ok(r.status===422,'History rejects inverted date range');
