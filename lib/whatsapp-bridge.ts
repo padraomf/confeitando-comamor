@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {db,HttpError,settings,putSetting,unpackOrder,runtime} from './server';
 import {digest,token,rateLimit} from './customer-auth';
-import {orderMessage,eventMessage} from './order-display';
+import {orderMessage,eventMessage,budgetMessage} from './order-display';
 import {qrSvg} from './qr';
 import type {Order} from './commerce';
 
@@ -24,6 +24,12 @@ export async function bridgeCommand(command:'connect'|'disconnect'){
  await db().prepare("UPDATE whatsapp_bridge SET desired=?,revision=revision+1,qr='' WHERE id='store'").bind(command==='connect'?'connected':'disconnected').run();
  if(command==='connect')await putSetting('store',JSON.stringify({...await settings(),whatsappMode:'webjs',whatsappEnabled:true}));
  return bridgeStatus();
+}
+export async function queueBudgetWhatsApp(budget:any){
+ const config=await settings();if(!config.whatsappEnabled||config.whatsappMode!=='webjs')return;
+ const rec=budget.data.phone;
+ const id=budget.id+'-cliente-Orçamento enviado';if(!/^\d{10,11}$/.test(rec))return;
+ await db().prepare('INSERT OR IGNORE INTO whatsapp_outbox(id,order_id,recipient,phone,status,created_at,updated_at,event) VALUES(?,?,?,?,?,?,?,?)').bind(id,budget.id,'cliente','55'+rec,'queued',Date.now(),Date.now(),'Orçamento enviado').run();
 }
 export async function queueWhatsApp(order:Order,event='Recebido'){
  const config=await settings();if(!config.whatsappEnabled||config.whatsappMode!=='webjs')return;
@@ -80,12 +86,15 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   let resumed=!!job;
   if(!job){const lease=token();job=await db().prepare("UPDATE whatsapp_outbox SET status='processing',lease_token=?,worker_id=?,updated_at=? WHERE id=(SELECT id FROM whatsapp_outbox WHERE status='queued' ORDER BY created_at LIMIT 1) AND status='queued' RETURNING *").bind(lease,bridge.token_hash,now).first<any>()}
   if(!job)return json({...current,job:null});
-  const raw=await db().prepare('SELECT * FROM orders WHERE id=?').bind(job.order_id).first<any>();
-  if(!resumed&&(!raw||(job.event==='Pago'&&raw.payment_status!=='Pago')||(job.event!=='Pago'&&job.event!=='Cobrança manual'&&job.event!==raw.status)||job.created_at<now-600000)){
+  const isBudget=job.event==='Orçamento enviado';
+  const raw=await db().prepare(`SELECT * FROM ${isBudget?'budgets':'orders'} WHERE id=?`).bind(job.order_id).first<any>();
+  if(!resumed&&(!raw||(job.event==='Pago'&&raw.payment_status!=='Pago')||(!isBudget&&job.event!=='Pago'&&job.event!=='Cobrança manual'&&job.event!==raw.status)||job.created_at<now-600000)){
    const detail=raw?.status==='Cancelado'?'Pedido cancelado.':'Aviso expirado (mais de 10 minutos na fila). O próximo aviso conterá a situação atualizada.';await db().prepare("UPDATE whatsapp_outbox SET status='skipped',updated_at=?,detail=? WHERE id=?").bind(now,detail,job.id).run();await setResult(job.id,'skipped',detail);return json({...current,job:null});
   }
   await setResult(job.id,'processing','Envio pelo WhatsApp conectado.');
-  return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text:raw?(job.recipient==='loja'?orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+(unpackOrder(raw).data.domain||runtime.PUBLIC_URL||new URL(req.url).origin)+'/acompanhar/'+unpackOrder(raw).data.trackingToken:'')):'',resumed}});
+  const domain = (raw&&!isBudget?unpackOrder(raw).data.domain:'')||runtime.PUBLIC_URL||new URL(req.url).origin;
+  const text = !raw?'':isBudget?budgetMessage({ ...raw, data: JSON.parse(raw.data) },domain):(job.recipient==='loja'?orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+domain+'/acompanhar/'+unpackOrder(raw).data.trackingToken:''));
+  return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text,resumed}});
  }
  throw new HttpError(404,'Não encontrado');
 }

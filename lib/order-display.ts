@@ -53,3 +53,9 @@ export function eventMessage(order:Order,event:string){
  let msg=`${statusEmoji} Pedido #${order.code}: *${status.toLowerCase()}*`;
  return msg;
 }
+
+export function budgetMessage(budget:any,domain:string){
+ const o=budget.data.offer;
+ if(!o)return '';
+ return `📝 Proposta de Orçamento #${budget.code}\n\nOlá, ${budget.data.name}!\n\nA confeitaria analisou a sua solicitação de encomenda e enviou uma proposta:\n\n*Total:* ${money(o.total)}\n*Sinal:* ${money(o.deposit)}\n\nPara conferir os detalhes e aprovar, acesse:\n🔗 ${domain}/encomendas\n\nQualquer dúvida, estamos à disposição.`;
+}

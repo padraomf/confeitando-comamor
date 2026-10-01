@@ -9,6 +9,7 @@ import {db,HttpError,runtime,settings,secrets,unpackOrder} from './server';
 import {shopper,rateLimit} from './customer-auth';
 import {panelUser} from './admin-auth';
 import {readPhoto} from './uploads';
+import {queueBudgetWhatsApp} from './whatsapp-bridge';
 import {dateTimeOrDate,localDay} from './admin-orders';
 export const budgetStatuses=['Recebido','Em análise','Orçamento enviado','Recusado','Convertido em pedido','Encerrado'] as const;
 export const budgetSchema=z.object({requestId:z.string().uuid(),delivery:z.enum(['pickup','delivery']).default('pickup'),address:addressSchema.optional(),cakeFlavor:z.string().max(80).default(''),sweetFlavor:z.string().max(80).default(''),name:z.string().trim().min(2).max(100),phone:z.string().transform(v=>v.replace(/\D/g,'')).refine(v=>/^\d{10,11}$/.test(v),'Informe um telefone com DDD.'),date:dateTimeOrDate,cake:z.boolean(),slices:z.union([z.literal(12),z.literal(20),z.literal(30)]).optional(),sweets:z.boolean(),quantity:z.number().int().min(100,'Docinhos: mínimo de 100 unidades.').max(100000).optional(),description:z.string().trim().min(10,'Conte os sabores, o tema e os detalhes da encomenda.').max(2000),photos:z.array(z.string().uuid()).max(3).default([])}).superRefine((v,c)=>{if(v.delivery==='delivery'&&!v.address)c.addIssue({code:'custom',message:'Informe o endereço da encomenda.'});if(!v.cake&&!v.sweets)c.addIssue({code:'custom',message:'Escolha bolo, docinhos ou os dois.'});if(v.cake&&!v.slices)c.addIssue({code:'custom',message:'Escolha a quantidade de fatias.'});if(v.sweets&&!v.quantity)c.addIssue({code:'custom',message:'Informe a quantidade de docinhos.'})});
@@ -81,7 +82,9 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
    const data=JSON.parse(raw.data);let status=input.status||raw.status;
    if(input.offer){const o=input.offer,today=localDay(Date.now(),(await settings()).timezone);if(o.deposit>o.total||o.fee>=o.total)throw new HttpError(422,'Confira o sinal, o frete e o total.');if(data.delivery==='pickup'&&o.fee!==0)throw new HttpError(422,'Retirada não tem frete.');if(o.expires<today||o.expires>data.date||data.date<today)throw new HttpError(422,'A validade deve ir de hoje até a data da encomenda.');data.offer={...o,version:crypto.randomUUID()};status='Orçamento enviado';}
    if(!input.offer&&!input.status)throw new HttpError(422,'Escolha uma ação.');
-   const result=await db().prepare('UPDATE budgets SET status=?,data=?,updated_at=? WHERE id=? AND data=? AND status=?').bind(status,JSON.stringify(data),Date.now(),input.id,raw.data,raw.status).run();if(!result.meta.changes)throw new HttpError(409,'O orçamento mudou. Atualize antes de editar.');return json({ok:true});
+   const result=await db().prepare('UPDATE budgets SET status=?,data=?,updated_at=? WHERE id=? AND data=? AND status=?').bind(status,JSON.stringify(data),Date.now(),input.id,raw.data,raw.status).run();if(!result.meta.changes)throw new HttpError(409,'O orçamento mudou. Atualize antes de editar.');
+   if(input.offer)await queueBudgetWhatsApp({id:input.id,code:raw.code,data});
+   return json({ok:true});
   }
  }
  if(path==='admin/budget'&&method==='POST'){
