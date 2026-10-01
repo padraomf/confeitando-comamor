@@ -51,6 +51,5 @@ export function eventMessage(order:Order,event:string){
  }
  const statusEmoji=status==='Em preparo'?'👩‍🍳':status==='Pronto para entrega'||status==='Pronto para retirada'?'✅':status==='Saiu para entrega'?'🛵':status==='Entregue'||status==='Retirado'?'🎉':'🍰';
  let msg=`${statusEmoji} Pedido #${order.code}: *${status.toLowerCase()}*`;
- if(status==='Pronto para retirada'&&order.data.pickupCode)msg+=`\n\n🔑 Código de retirada: *${order.data.pickupCode}*`;
  return msg;
 }

@@ -149,7 +149,6 @@ export async function extraRoutes(req:Request,path:string){
      note:input.note,
      change:null,
      ...(input.customOrder?{customOrder:true,dueDate:input.dueDate}:{}),
-     ...(input.delivery==='pickup'?{pickupCode:String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000)}:{}),
      ...(input.googleMapsUrl?{googleMapsUrl:input.googleMapsUrl}:{})
    };
 
