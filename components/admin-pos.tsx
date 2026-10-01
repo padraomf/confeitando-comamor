@@ -402,7 +402,7 @@ export default function AdminPOS({ products, onSaved, onClose }: { products: Pro
               )}
 
               <Label>Forma de Pagamento</Label>
-              <Select value={payment} onValueChange={(v: any) => setPayment(v)}>
+              <Select value={payment} onValueChange={(v: any) => { setPayment(v); if (v === 'cash' || v === 'card_machine') setPaymentMode('later'); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pix">Pix</SelectItem>
