@@ -20,7 +20,7 @@ export function collectionInfo(order:Order){
  if(order.payment==='cash')return {title:'COBRAR '+money(due),detail:'Receber em dinheiro '+where+'. '+(order.data.change!=null?'Cliente pagará com '+money(order.data.change)+'. Levar '+money(Math.max(0,order.data.change-due))+' de troco.':'Cliente não solicitou troco.'),due};
  if(order.payment==='card_machine'||order.payment==='card'&&manualPayment(order))return {title:'COBRAR '+money(due),detail:(order.data.delivery==='pickup'?'Usar a maquininha da loja.':'LEVAR A MAQUININHA. ')+'Receber no cartão '+where+' e conferir a aprovação na maquininha.',due};
  if(manualPayment(order))return {title:'PIX · AGUARDA CONFERÊNCIA',detail:'Valor: '+money(due)+'. Conferir o crédito no banco com a loja antes de entregar. Não cobrar novamente se o cliente já transferiu.',due};
- return {title:'PAGAMENTO ONLINE PENDENTE',detail:'Aguardar a confirmação da loja. Não cobrar novamente na entrega.',due:0};
+ return {title:'PAGAMENTO ONLINE PENDENTE',detail:order.data.depositRequired?'O pedido será agendado a partir da confirmação do pagamento do sinal ou total.':'Aguardar a confirmação da loja. Não cobrar novamente na entrega.',due:0};
 }
 export function destinationUrl(order:Order){
  if((order.data as any).googleMapsUrl)return (order.data as any).googleMapsUrl;
