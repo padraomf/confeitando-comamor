@@ -851,7 +851,7 @@ export default function Storefront({
         </section>
         <a className="celebration-banner" href="/encomendas">
           <img
-            src="/images/celebration.webp"
+            src="/images/celebration_new.jpg"
             alt="Fatia de bolo com morangos, imagem ilustrativa"
             width={320}
             height={240}
