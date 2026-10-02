@@ -12,9 +12,12 @@ export async function deliver(job,{client,journal,report,ready}){
  journal.put(job.id,{id:job.id,leaseToken:job.leaseToken,status:'started',messageId:''});
  let result;
  try{
-  const message=await client.sendMessage(chat._serialized,job.text,{sendSeen:false,waitUntilMsgSent:true});
+  const message=await client.sendMessage(chat._serialized,job.text,{sendSeen:false});
   const messageId=message?.id?._serialized;if(!messageId)throw Error('No message id');
   result={id:job.id,leaseToken:job.leaseToken,status:'sent',messageId};
- }catch{result={id:job.id,leaseToken:job.leaseToken,status:'uncertain',messageId:''}}
+ }catch(err){
+  try{ (await import('node:fs')).appendFileSync('bridge-err.log', new Date().toISOString() + ' ' + String(err) + '\\n'); }catch(e){}
+  result={id:job.id,leaseToken:job.leaseToken,status:'uncertain',messageId:''}
+ }
  journal.put(job.id,result);await report(result);
 }
