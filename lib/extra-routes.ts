@@ -4,11 +4,39 @@ import {shopper,rateLimit,passwordHash} from './customer-auth';
 import {profileSchema} from './commerce';
 import {panelUser} from './admin-auth';
 import {checkNativePayment} from './online-payments';
+import {checkoutLink} from './integrations';
+import {paymentReady} from './payment-connect';
 import {readPhoto} from './uploads';
 import {manualPayment} from './order-display';
 const json=(data:unknown)=>Response.json(data,{headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}});
 export async function extraRoutes(req:Request,path:string){
- if(/^tracking\/[a-f0-9-]{72}$/.test(path)&&req.method==='GET'){const token=path.split('/')[1];const raw=await db().prepare("SELECT * FROM orders WHERE json_extract(data,'$.trackingToken')=? LIMIT 1").bind(token).first<any>();if(!raw)throw new HttpError(404,'Pedido não encontrado');const o=unpackOrder(raw);return json({code:o.code,status:o.status,payment_status:o.payment_status,total:o.total,delivery:o.data.delivery,items:o.data.items,pickupCode:o.data.pickupCode,discountAmount:o.data.discountAmount})}
+ if(/^tracking\/[a-f0-9-]{72}$/.test(path)&&req.method==='GET'){const token=path.split('/')[1];const raw=await db().prepare("SELECT * FROM orders WHERE json_extract(data,'$.trackingToken')=? LIMIT 1").bind(token).first<any>();if(!raw)throw new HttpError(404,'Pedido não encontrado');const o=unpackOrder(raw);return json({code:o.code,status:o.status,payment_status:o.payment_status,total:o.total,delivery:o.data.delivery,items:o.data.items,pickupCode:o.data.pickupCode,discountAmount:o.data.discountAmount,checkout_url:o.checkout_url,pixCode:o.data.pixCode,paymentProvider:o.data.paymentProvider})}
+ if(/^tracking\/[a-f0-9-]{72}\/checkout$/.test(path)&&req.method==='POST'){
+  const token=path.split('/')[1];
+  const bodyData = await req.json();
+  const paymentMethod = bodyData.paymentMethod;
+  if (!['pix', 'card'].includes(paymentMethod)) throw new HttpError(422, 'Forma de pagamento inválida.');
+  
+  const raw=await db().prepare("SELECT * FROM orders WHERE json_extract(data,'$.trackingToken')=? LIMIT 1").bind(token).first<any>();
+  if(!raw)throw new HttpError(404,'Pedido não encontrado');
+  const o=unpackOrder(raw);
+  if (['Pago', 'Estornado', 'Contestado', 'Expirado'].includes(o.payment_status)) throw new HttpError(422, 'O pagamento já foi concluído ou expirou.');
+  if (['Cancelado', 'Não retirado'].includes(o.status)) throw new HttpError(422, 'Este pedido não pode mais ser pago.');
+
+  const {settings, secrets} = await import('./server');
+  const config = await settings();
+  const s = await secrets();
+  const provider = paymentReady(s, config.paymentProvider) ? config.paymentProvider : 'manual';
+  
+  if (provider === 'manual') throw new HttpError(422, 'Pagamento online indisponível no momento.');
+
+  o.payment = paymentMethod;
+  o.data.paymentProvider = provider;
+  await db().prepare("UPDATE orders SET payment=?, data=json_set(data,'$.paymentProvider',?) WHERE id=?").bind(paymentMethod, provider, o.id).run();
+  
+  const url = await checkoutLink(o, new URL(req.url).origin);
+  return json({ checkout_url: url });
+ }
  if(/^orders\/[^/]+\/(check|proof)$/.test(path)){
  const u=await shopper(req),id=path.split('/')[1],raw=await db().prepare('SELECT * FROM orders WHERE id=? AND user_id=?').bind(id,u.userId).first<any>();if(!raw)throw new HttpError(404,'Pedido não encontrado');const o=unpackOrder(raw);
  if(path.endsWith('/check')&&req.method==='POST'){await rateLimit(req,'payment-check:'+u.userId,20);if(o.payment_status!=='Pago')await checkNativePayment(o);return json({order:unpackOrder(await db().prepare('SELECT * FROM orders WHERE id=?').bind(id).first<any>())})}
