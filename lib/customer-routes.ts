@@ -69,5 +69,36 @@ export async function customerRoute(req:Request,path:string,body:()=>Promise<any
  if(path==='customer/logout'&&req.method==='POST'){await revoke(req);const response=json({ok:true});response.headers.append('Set-Cookie',setSessionCookie('',false,true));response.headers.append('Set-Cookie',setSessionCookie('',true,true));return response;}
  if(path==='customer/recover'&&req.method==='POST'){
  const input=z.object({email:emailSchema,recoveryCode:z.string().trim().regex(/^[a-f0-9]{64}$/,'Informe o código de recuperação guardado ao criar sua conta'),password:passwordSchema}).parse(await body());await authLimit(req,input.email);const row=await db().prepare('SELECT id,recovery_hash FROM customers WHERE email=?').bind(input.email).first<any>();if(!row||row.recovery_hash!==await digest(input.recoveryCode))throw new HttpError(401,'E-mail ou código de recuperação incorretos.');const replacement=token();const updated=await db().prepare('UPDATE customers SET password_hash=?,recovery_hash=? WHERE id=? AND recovery_hash=?').bind(await passwordHash(input.password),await digest(replacement),row.id,row.recovery_hash).run();if(!updated.meta.changes)throw new HttpError(409,'Código já utilizado.');await db().prepare('DELETE FROM customer_sessions WHERE actor_id=?').bind(row.id).run();return json({recoveryCode:replacement});}
+ if(path==='customer/forgot'&&req.method==='POST'){
+  const input=z.object({phone:z.string().transform(s=>s.replace(/\D/g,'')).refine(s=>/^\d{10,11}$/.test(s),'Informe um celular válido')}).parse(await body());
+  await rateLimit(req,'forgot:'+(req.headers.get('cf-connecting-ip')||'shared'),5);
+  const cleanPhoneSQL=`REPLACE(REPLACE(REPLACE(REPLACE(json_extract(data,'$.phone'), ' ', ''), '-', ''), '(', ''), ')', '')`;
+  const profile=await db().prepare(`SELECT user_id FROM profiles WHERE ${cleanPhoneSQL}=?`).bind(input.phone).first<any>();
+  if(!profile){return json({ok:true})}
+  const cust=await db().prepare('SELECT id FROM customers WHERE id=?').bind(profile.user_id).first<any>();
+  if(!cust){return json({ok:true})}
+  const code=String(Math.floor(100000+Math.random()*900000));
+  const id=crypto.randomUUID();const expires=Date.now()+10*60*1000;
+  await db().prepare('DELETE FROM password_resets WHERE customer_id=?').bind(cust.id).run();
+  await db().prepare('INSERT INTO password_resets(id,customer_id,code_hash,phone,expires) VALUES(?,?,?,?,?)').bind(id,cust.id,await digest(code),input.phone,expires).run();
+  const {settings:getSettings}=await import('./server');const config=await getSettings();
+  const storeName=config.name||'Confeitando com Amor';
+  const text=`🔑 *${storeName}*\n\nSeu código de recuperação de senha é:\n\n*${code}*\n\nEle expira em 10 minutos.\nSe você não solicitou, ignore esta mensagem.`;
+  await db().prepare('INSERT OR IGNORE INTO whatsapp_outbox(id,order_id,recipient,phone,status,created_at,updated_at,event,detail) VALUES(?,?,?,?,?,?,?,?,?)').bind('reset-'+id,id,'sistema','55'+input.phone,'queued',Date.now(),Date.now(),'Recuperação de senha',text).run();
+  return json({ok:true});}
+ if(path==='customer/reset-code'&&req.method==='POST'){
+  const input=z.object({phone:z.string().transform(s=>s.replace(/\D/g,'')).refine(s=>/^\d{10,11}$/.test(s),'Informe o celular'),code:z.string().regex(/^\d{6}$/,'Informe o código de 6 dígitos'),password:passwordSchema}).parse(await body());
+  await rateLimit(req,'reset-code:'+(req.headers.get('cf-connecting-ip')||'shared'),10);
+  const cleanPhoneSQL=`REPLACE(REPLACE(REPLACE(REPLACE(json_extract(data,'$.phone'), ' ', ''), '-', ''), '(', ''), ')', '')`;
+  const profile=await db().prepare(`SELECT user_id FROM profiles WHERE ${cleanPhoneSQL}=?`).bind(input.phone).first<any>();
+  if(!profile)throw new HttpError(401,'Código inválido ou expirado.');
+  const row=await db().prepare('SELECT * FROM password_resets WHERE customer_id=? AND used=0 AND expires>?').bind(profile.user_id,Date.now()).first<any>();
+  if(!row||row.code_hash!==await digest(input.code))throw new HttpError(401,'Código inválido ou expirado.');
+  await db().batch([
+   db().prepare('UPDATE password_resets SET used=1 WHERE id=?').bind(row.id),
+   db().prepare('UPDATE customers SET password_hash=? WHERE id=?').bind(await passwordHash(input.password),profile.user_id),
+   db().prepare('DELETE FROM customer_sessions WHERE actor_id=?').bind(profile.user_id)
+  ]);
+  return json({ok:true});}
  return null;
 }
