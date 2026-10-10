@@ -54,6 +54,8 @@ export default function AdminCosts() {
     purchaseDate: '',
     amount: '',
     dueDate: '',
+    installments: '1',
+    cardName: '',
   });
 
   useEffect(() => {
@@ -81,7 +83,9 @@ export default function AdminCosts() {
       purchaseDate: cost.purchase_date,
       amount: (cost.amount / 100).toFixed(2).replace('.', ','),
       dueDate: cost.due_date,
-    } : { description: '', purchaseDate: new Date().toISOString().slice(0, 10), amount: '', dueDate: '' });
+      installments: '1',
+      cardName: '',
+    } : { description: '', purchaseDate: new Date().toISOString().slice(0, 10), amount: '', dueDate: '', installments: '1', cardName: '' });
   }
 
   async function saveCost() {
@@ -100,6 +104,8 @@ export default function AdminCosts() {
           purchaseDate: form.purchaseDate,
           amount,
           dueDate: form.dueDate,
+          installments: Number(form.installments),
+          cardName: form.cardName.trim()
         })
       });
       toast.success(editing.id ? 'Custo atualizado.' : 'Custo adicionado.');
@@ -262,7 +268,7 @@ export default function AdminCosts() {
           </label>
           <div className="form-grid">
             <label className="field">
-              <span>Valor (R$)</span>
+              <span>{form.installments !== '1' ? 'Valor total (R$)' : 'Valor (R$)'}</span>
               <Input value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0,00" />
             </label>
             <label className="field">
@@ -270,8 +276,24 @@ export default function AdminCosts() {
               <Input type="date" value={form.purchaseDate} onChange={e => setForm(f => ({ ...f, purchaseDate: e.target.value }))} />
             </label>
           </div>
+          <div className="form-grid">
+            <label className="field">
+              <span>Dividir em (vezes)</span>
+              <Select value={form.installments} onValueChange={v => setForm(f => ({ ...f, installments: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Não dividir (1x)</SelectItem>
+                  {Array.from({ length: 11 }, (_, i) => <SelectItem key={i + 2} value={String(i + 2)}>{i + 2} vezes</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="field">
+              <span>Cartão (opcional)</span>
+              <Input value={form.cardName} maxLength={50} onChange={e => setForm(f => ({ ...f, cardName: e.target.value }))} placeholder="Ex.: Nubank" />
+            </label>
+          </div>
           <label className="field">
-            <span>Vencimento</span>
+            <span>{form.installments !== '1' ? 'Vencimento da 1ª parcela' : 'Vencimento'}</span>
             <Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
           </label>
         </div>

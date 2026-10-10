@@ -218,11 +218,54 @@ async function handler(req:Request){try{
   }
   if(path==='admin/costs'&&method==='POST'){
    if(currentAdmin.role!=='admin')throw new HttpError(403,'Acesso restrito.');
-   const input=z.object({id:z.string().uuid().optional(),description:z.string().trim().min(2).max(200),purchaseDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),amount:z.number().int().positive().max(100000000),dueDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/)}).parse(await body(req));
-   const id=input.id??crypto.randomUUID();
-   if(input.id){await db().prepare('UPDATE costs SET description=?,purchase_date=?,amount=?,due_date=? WHERE id=?').bind(input.description,input.purchaseDate,input.amount,input.dueDate,id).run()}
-   else{await db().prepare('INSERT INTO costs(id,description,purchase_date,amount,due_date,created_at) VALUES(?,?,?,?,?,?)').bind(id,input.description,input.purchaseDate,input.amount,input.dueDate,Date.now()).run()}
-   return json({id});
+   const input=z.object({id:z.string().uuid().optional(),description:z.string().trim().min(2).max(200),purchaseDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),amount:z.number().int().positive().max(100000000),dueDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),installments:z.number().int().min(1).max(12).optional().default(1),cardName:z.string().trim().max(50).optional().default('')}).parse(await body(req));
+   if(input.id){
+    if(input.installments>1){
+     const stmts=[];
+     const total=input.amount;
+     const installments=input.installments;
+     const amountPerInst=Math.floor(total/installments);
+     const remainder=total-(amountPerInst*installments);
+     const [y,m,d]=input.dueDate.split('-').map(Number);
+     for(let i=1;i<=installments;i++){
+      const amount=i===1?amountPerInst+remainder:amountPerInst;
+      const dueStr=new Date(Date.UTC(y,m-1+(i-1),d,12,0,0)).toISOString().slice(0,10);
+      let desc=input.description;
+      if(installments>1)desc+=` (${i}/${installments})`;
+      if(input.cardName)desc+=` - ${input.cardName}`;
+      if(i===1){
+       stmts.push(db().prepare('UPDATE costs SET description=?,purchase_date=?,amount=?,due_date=? WHERE id=?').bind(desc,input.purchaseDate,amount,dueStr,input.id));
+      }else{
+       stmts.push(db().prepare('INSERT INTO costs(id,description,purchase_date,amount,due_date,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),desc,input.purchaseDate,amount,dueStr,Date.now()));
+      }
+     }
+     await db().batch(stmts);
+     return json({id:input.id});
+    }else{
+     const desc=input.cardName?`${input.description} - ${input.cardName}`:input.description;
+     await db().prepare('UPDATE costs SET description=?,purchase_date=?,amount=?,due_date=? WHERE id=?').bind(desc,input.purchaseDate,input.amount,input.dueDate,input.id).run()
+     return json({id:input.id});
+    }
+   }
+   else{
+    const stmts=[];
+    const total=input.amount;
+    const installments=input.installments;
+    const amountPerInst=Math.floor(total/installments);
+    const remainder=total-(amountPerInst*installments);
+    const [y,m,d]=input.dueDate.split('-').map(Number);
+    for(let i=1;i<=installments;i++){
+     const id=crypto.randomUUID();
+     const amount=i===1?amountPerInst+remainder:amountPerInst;
+     const dueStr=new Date(Date.UTC(y,m-1+(i-1),d,12,0,0)).toISOString().slice(0,10);
+     let desc=input.description;
+     if(installments>1)desc+=` (${i}/${installments})`;
+     if(input.cardName)desc+=` - ${input.cardName}`;
+     stmts.push(db().prepare('INSERT INTO costs(id,description,purchase_date,amount,due_date,created_at) VALUES(?,?,?,?,?,?)').bind(id,desc,input.purchaseDate,amount,dueStr,Date.now()));
+    }
+    await db().batch(stmts);
+    return json({id:crypto.randomUUID()});
+   }
   }
   if(path==='admin/costs'&&method==='PATCH'){
    if(currentAdmin.role!=='admin')throw new HttpError(403,'Acesso restrito.');
