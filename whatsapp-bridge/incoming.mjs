@@ -18,8 +18,18 @@ export function createIncomingHandlers({request,getConnection}){
  async function contactPhone(msg,chat){
   if(!/@(?:c\.us|lid)$/.test(chat))return null;
   const contact=typeof msg.getContact==='function'?await msg.getContact().catch(()=>null):null;
-  const phone=contact?.number||(/@c\.us$/.test(chat)?chat.split('@')[0]:null);
-  return phone&&/^\d{8,16}$/.test(phone)?{phone,name:contact?.pushname||contact?.name||''}:null;
+  let phone=/@c\.us$/.test(chat)?chat.split('@')[0]:null;
+  if(!phone){
+   const client=getConnection().client;
+   if(typeof client?.getContactLidAndPhone==='function'){
+    const mappings=await client.getContactLidAndPhone([chat]).catch(()=>[]);
+    const resolved=mappings.find(entry=>entry.lid===chat)||(mappings.length===1?mappings[0]:null);
+    phone=resolved?.pn?.replace(/@(?:c\.us|s\.whatsapp\.net)$/,'')||null;
+   }
+   // Contact.number can contain the LID itself. Never treat a LID as a phone number.
+   if(!phone&&contact?.id?.server==='c.us')phone=contact.id.user;
+  }
+  return phone&&/^\d{8,15}$/.test(phone)?{phone,name:contact?.pushname||contact?.name||''}:null;
  }
  async function incoming(msg){
   if(msg.fromMe||!msg.body||msg.body.length>2000)return;

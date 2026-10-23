@@ -115,3 +115,17 @@ test('customer can decline registration and continue the conversation',async()=>
  const phone='5511888888777';await ai.prepareWhatsAppCustomer(phone,'Oi');await ai.captureWhatsAppCustomerName(phone,'Luiza');
  const result=await ai.prepareWhatsAppCustomer(phone,'prefiro não');assert.equal(result.stage,'declined');assert.equal(await ai.findWhatsAppCustomer(phone),null);
 });
+
+test('mobile numbers with and without the ninth digit recognize one existing customer',async()=>{
+ sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('ninth-digit-customer',JSON.stringify({name:'Cliente Existente',phone:'(74) 99920-4407'}),Date.now());
+ assert.equal((await ai.findWhatsAppCustomer('557499204407')).userId,'ninth-digit-customer');
+ assert.equal((await ai.prepareWhatsAppCustomer('557499204407','Olá')).stage,'known');
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM profiles WHERE user_id=?').get('ninth-digit-customer').n,1);
+ sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('old-format-customer',JSON.stringify({name:'Outro Cliente',phone:'7498812345'}),Date.now());
+ assert.equal((await ai.findWhatsAppCustomer('5574998812345')).userId,'old-format-customer');
+});
+
+test('ambiguous old-format numbers are not assigned to the wrong customer',async()=>{
+ for(const id of ['ambiguous-one','ambiguous-two'])sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(id,JSON.stringify({name:'Teste',phone:'7488812345'}),Date.now());
+ assert.equal(await ai.findWhatsAppCustomer('5574988812345'),null);
+});

@@ -7,8 +7,14 @@ const cleanPhoneSQL="REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(json_extrac
 export async function findWhatsAppCustomer(phone:string){
  const national=phone.startsWith('55')?phone.slice(2):phone;
  const row=await db().prepare(`SELECT p.user_id,p.data FROM profiles p LEFT JOIN customers c ON c.id=p.user_id WHERE ${cleanPhoneSQL} IN (?,?) ORDER BY CASE WHEN c.id IS NOT NULL THEN 0 ELSE 1 END,p.updated_at DESC LIMIT 1`).bind(national,phone).first<{user_id:string;data:string}>();
- if(!row)return null;const data=JSON.parse(row.data);
- return {userId:row.user_id,name:String(data.name||'').trim()};
+ if(row){const data=JSON.parse(row.data);return {userId:row.user_id,name:String(data.name||'').trim()}}
+ const alternate=/^\d{2}9[6-9]\d{7}$/.test(national)?national.slice(0,2)+national.slice(3):/^\d{2}[6-9]\d{7}$/.test(national)?national.slice(0,2)+'9'+national.slice(2):null;
+ if(!alternate)return null;
+ const candidates=await db().prepare(`SELECT p.user_id,p.data FROM profiles p WHERE ${cleanPhoneSQL} IN (?,?) LIMIT 2`).bind(alternate,'55'+alternate).all<{user_id:string;data:string}>();
+ // An ambiguous old-format number must not identify the wrong customer.
+ if(candidates.results.length!==1)return null;
+ const candidate=candidates.results[0],data=JSON.parse(candidate.data);
+ return {userId:candidate.user_id,name:String(data.name||'').trim()};
 }
 async function writeContact(phone:string,name:string|null,stage:string,userId:string|null=null){
  await db().prepare('INSERT INTO whatsapp_contacts(phone,name,stage,user_id,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(phone) DO UPDATE SET name=excluded.name,stage=excluded.stage,user_id=excluded.user_id,updated_at=excluded.updated_at').bind(phone,name,stage,userId,Date.now()).run();
