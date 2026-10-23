@@ -22,6 +22,10 @@ export async function advanceOrder(id:string,status:string,actor:string,pickupCo
  if(!['Cancelado','Não retirado'].includes(status)){
  if(['Estornado','Contestado','Estorno parcial'].includes(o.payment_status))throw new HttpError(422,'Confira a devolução ou contestação antes de continuar.');
  if(o.data.depositRequired&&receivedAmount(o)<o.data.depositRequired)throw new HttpError(422,'Confirme o sinal combinado antes de iniciar o preparo.');
+ if(!o.data.depositRequired&&!payOnDelivery(o)&&remainingAmount(o)>0)throw new HttpError(422,'Confirme o pagamento antes de iniciar o preparo.');
+ if(status==='Retirado'){
+  if(remainingAmount(o)>0)throw new HttpError(422,'Confirme o recebimento antes de entregar a retirada.');
+ }
  }
  const guard='stage:'+crypto.randomUUID();
  try{await db().batch([

@@ -33,6 +33,10 @@ O WhatsApp é uma integração não oficial, sujeita a alterações/restrições
 
 ## Validação
 
+Atendimento automático: configure `OPENAI_API_KEY` como segredo do Worker (ou use a chave cifrada em Conexões), selecione o modelo e ative o assistente no painel. A chave nunca deve entrar no Git. O conector precisa executar a versão correspondente de `whatsapp-bridge`, incluindo `incoming.mjs`; atualizar apenas o site não atualiza o serviço Node do computador. A migração `0012_whatsapp_chats.sql` cria o histórico e a pausa do atendimento humano sem apagar dados existentes.
+
+O assistente consulta o catálogo e as regras atuais; o relatório Graphify exibido no painel é um retrato técnico incluído na compilação. O teste no painel chama a API sem enviar WhatsApp. Testes locais adicionais: `node --test tests/openai-service.test.mjs whatsapp-bridge/test.mjs`.
+
 ```
 node tests/commerce.test.mjs
 node --test whatsapp-bridge/test.mjs

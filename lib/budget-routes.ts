@@ -9,7 +9,7 @@ import {db,HttpError,runtime,settings,secrets,unpackOrder} from './server';
 import {shopper,rateLimit} from './customer-auth';
 import {panelUser} from './admin-auth';
 import {readPhoto} from './uploads';
-import {queueBudgetWhatsApp} from './whatsapp-bridge';
+import {queueBudgetWhatsApp,queueBudgetAlertWhatsApp} from './whatsapp-bridge';
 import {dateTimeOrDate,localDay} from './admin-orders';
 export const budgetStatuses=['Recebido','Em análise','Orçamento enviado','Recusado','Convertido em pedido','Encerrado'] as const;
 export const budgetSchema=z.object({requestId:z.string().uuid(),delivery:z.enum(['pickup','delivery']).default('pickup'),address:addressSchema.optional(),cakeFlavor:z.string().max(80).default(''),sweetFlavor:z.string().max(80).default(''),name:z.string().trim().min(2).max(100),phone:z.string().transform(v=>v.replace(/\D/g,'')).refine(v=>/^\d{10,11}$/.test(v),'Informe um telefone com DDD.'),date:dateTimeOrDate,cake:z.boolean(),slices:z.union([z.literal(12),z.literal(20),z.literal(30)]).optional(),sweets:z.boolean(),quantity:z.number().int().min(100,'Docinhos: mínimo de 100 unidades.').max(100000).optional(),description:z.string().trim().min(10,'Conte os sabores, o tema e os detalhes da encomenda.').max(2000),photos:z.array(z.string().uuid()).max(3).default([])}).superRefine((v,c)=>{if(v.delivery==='delivery'&&!v.address)c.addIssue({code:'custom',message:'Informe o endereço da encomenda.'});if(!v.cake&&!v.sweets)c.addIssue({code:'custom',message:'Escolha bolo, docinhos ou os dois.'});if(v.cake&&!v.slices)c.addIssue({code:'custom',message:'Escolha a quantidade de fatias.'});if(v.sweets&&!v.quantity)c.addIssue({code:'custom',message:'Informe a quantidade de docinhos.'})});
@@ -47,7 +47,9 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
    for(const id of input.photos){const photo=await db().prepare('SELECT id FROM budget_attachments WHERE id=? AND user_id=? AND budget_id IS NULL').bind(id,u.userId).first();if(!photo)throw new HttpError(422,'Uma foto não está mais disponível. Remova e envie novamente.')}
    const id=crypto.randomUUID(),timestamp=Date.now(),code='E-'+id.slice(0,8).toUpperCase(),{requestId,...data}=input;
    const row={id,user_id:u.userId,request_id:requestId,code,data:JSON.stringify(data),status:'Recebido',created_at:timestamp,updated_at:timestamp};
-   await db().batch([db().prepare('INSERT INTO budgets(id,user_id,request_id,code,data,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,u.userId,requestId,code,row.data,row.status,timestamp,timestamp),...input.photos.map(photo=>db().prepare('UPDATE budget_attachments SET budget_id=? WHERE id=? AND user_id=? AND budget_id IS NULL').bind(id,photo,u.userId))]);return json({budget:unpack(row)},201);
+   await db().batch([db().prepare('INSERT INTO budgets(id,user_id,request_id,code,data,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,u.userId,requestId,code,row.data,row.status,timestamp,timestamp),...input.photos.map(photo=>db().prepare('UPDATE budget_attachments SET budget_id=? WHERE id=? AND user_id=? AND budget_id IS NULL').bind(id,photo,u.userId))]);
+   await queueBudgetAlertWhatsApp(row).catch(()=>{console.error('Falha ao enfileirar aviso de orçamento.');});
+   return json({budget:unpack(row)},201);
   }
  }
  if(/^budgets\/[^/]+\/answer$/.test(path)&&method==='POST'){

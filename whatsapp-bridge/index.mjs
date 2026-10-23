@@ -6,24 +6,28 @@ import http from 'node:http';
 import {readJSON,journal} from './storage.mjs';
 import {Connection} from './connection.mjs';
 import {deliver} from './delivery.mjs';
+import {createIncomingHandlers} from './incoming.mjs';
 
 const {Client,LocalAuth}=whatsapp;
-const directory=process.env.CCA_BRIDGE_DATA_DIR||'C:\\CCA_Bridge_Data';
+const directory=process.env.CCA_BRIDGE_DATA_DIR||path.join(path.dirname(fileURLToPath(import.meta.url)),'data');
 const config=readJSON(path.join(directory,'config.json')) || { token: process.env.CCA_TOKEN, site: process.env.CCA_SITE };
 if(!config?.token||!config?.site){console.error('Configure CCA_TOKEN e CCA_SITE nas variáveis de ambiente, ou execute npm run setup localmente.');process.exit(1)}
 const site=new URL(config.site);
 const runner=randomUUID(),ledger=journal(path.join(directory,'journal'));
-const connection=new Connection(()=>new Client({
+async function request(route,body){
+ const response=await fetch(site.origin+'/api/bridge/'+route,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(route==='incoming'?45000:15000)});
+ const result=await response.json();if(!response.ok){const error=new Error(result.error||'Falha na comunicação com o site');error.status=response.status;throw error}return result;
+}
+const handlers=createIncomingHandlers({request,getConnection:()=>connection});
+const connection=new Connection(()=>{
+ const client=new Client({
  authStrategy:new LocalAuth({clientId:'confeitando',dataPath:path.join(directory,'session')}),
  puppeteer:{headless:true,...process.env.CCA_CHROME_PATH?{executablePath:process.env.CCA_CHROME_PATH}:{},args:process.env.CCA_CONTAINER==='1'?['--no-sandbox','--disable-setuid-sandbox']:[]},
  webVersionCache:{type:'local',path:path.join(directory,'web-cache')},
  deviceName:'Confeitando com Amor',qrMaxRetries:10,takeoverOnConflict:false
-}));
+ });handlers.prepareClient(client);return client;
+},handlers.incoming,handlers.created);
 let stopping=false,handling=false,networkFailures=0,lastState='';
-async function request(route,body){
- const response=await fetch(site.origin+'/api/bridge/'+route,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(15000)});
- const result=await response.json();if(!response.ok){const error=new Error(result.error||'Falha na comunicação com o site');error.status=response.status;throw error}return result;
-}
 async function tick(){
  try{
   const response=await request('heartbeat',{runner,...connection.snapshot()});networkFailures=0;

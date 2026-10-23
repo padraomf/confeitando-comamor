@@ -31,13 +31,29 @@ export async function queueBudgetWhatsApp(budget:any){
  const id=budget.id+'-cliente-Orçamento enviado';if(!/^\d{10,11}$/.test(rec))return;
  await db().prepare('INSERT OR IGNORE INTO whatsapp_outbox(id,order_id,recipient,phone,status,created_at,updated_at,event) VALUES(?,?,?,?,?,?,?,?)').bind(id,budget.id,'cliente','55'+rec,'queued',Date.now(),Date.now(),'Orçamento enviado').run();
 }
+export async function queueBudgetAlertWhatsApp(budget:any){
+ const config=await settings();if(!config.whatsappEnabled||config.whatsappMode!=='webjs')return;
+ const storePhones:string[]=config.adminNotifyPhones?.length?config.adminNotifyPhones:['5574988218637','5574988546993'];
+ const data=typeof budget.data==='string'?JSON.parse(budget.data):budget.data;
+ const text=`📝 NOVO PEDIDO DE ORÇAMENTO (#${budget.code})!\n\nCliente: ${data.name}\nWhatsApp: 55${data.phone}\nData do evento: ${data.date||'A combinar'}\nBolo: ${data.cakeFlavor||'Padrão'} (${data.slices||0} fatias)\nDocinhos: ${data.sweetFlavor||'Nenhum'}\n\nAcesse o painel em Orçamentos para enviar a proposta.`;
+ for(const phone of storePhones){
+  const clean=phone.replace(/\D/g,'');
+  const id=`${budget.id}-loja-${clean}-recebido`;
+  await db().prepare('INSERT OR IGNORE INTO whatsapp_outbox(id,order_id,recipient,phone,status,created_at,updated_at,event,detail) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,budget.id,'loja',clean,'queued',Date.now(),Date.now(),'Orçamento recebido',text).run();
+ }
+}
 export async function queueWhatsApp(order:Order,event='Recebido'){
  const config=await settings();if(!config.whatsappEnabled||config.whatsappMode!=='webjs')return;
- const bridge=await db().prepare("SELECT phone FROM whatsapp_bridge WHERE id='store'").first<any>();
- const storePhone=config.whatsapp||bridge?.phone||'';
- const recipients=[...(order.data.profile.whatsappConsent?[{kind:'cliente',phone:'55'+order.data.profile.phone}]:[])];
+ const storePhones:string[]=config.adminNotifyPhones?.length?config.adminNotifyPhones:['5574988218637','5574988546993'];
+ const recipients:{kind:string;phone:string}[]=[...(order.data.profile.whatsappConsent?[{kind:'cliente',phone:'55'+order.data.profile.phone}]:[])];
+ if(['Recebido','Pago'].includes(event)){
+  for(const phone of storePhones){
+   const clean=phone.replace(/\D/g,'');
+   if(/^55\d{10,11}$/.test(clean))recipients.push({kind:'loja',phone:clean});
+  }
+ }
  for(const rec of recipients){
-  const id=order.id+'-'+rec.kind+'-'+event;if(!/^55\d{10,11}$/.test(rec.phone)){await db().prepare('INSERT OR IGNORE INTO notifications(id,order_id,recipient,status,detail) VALUES(?,?,?,?,?)').bind(id,order.id,rec.kind,'não configurado','Informe o WhatsApp da confeitaria.').run();continue}
+  const id=order.id+'-'+rec.kind+'-'+rec.phone+'-'+event;if(!/^55\d{10,11}$/.test(rec.phone)){await db().prepare('INSERT OR IGNORE INTO notifications(id,order_id,recipient,status,detail) VALUES(?,?,?,?,?)').bind(id,order.id,rec.kind,'não configurado','Número não configurado').run();continue}
   const result=await db().prepare('INSERT OR IGNORE INTO whatsapp_outbox(id,order_id,recipient,phone,status,created_at,updated_at,event) VALUES(?,?,?,?,?,?,?,?)').bind(id,order.id,rec.kind,rec.phone,'queued',Date.now(),Date.now(),event).run();
   if(result.meta.changes)await db().prepare('INSERT INTO notifications(id,order_id,recipient,status,detail) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,detail=excluded.detail').bind(id,order.id,rec.kind,'na fila','Aguardando o conector do WhatsApp.').run();
  }
@@ -72,6 +88,25 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   const detail=input.status==='sent'?input.messageId:input.status==='uncertain'?'Confira a conversa antes de reenviar. O envio pode ter ocorrido.':'Não foi possível enviar. Confira o número e a conexão.';
   await db().prepare('UPDATE whatsapp_outbox SET status=?,updated_at=?,message_id=?,detail=? WHERE id=? AND status=?').bind(input.status,Date.now(),input.messageId,detail,input.id,'processing').run();await setResult(input.id,input.status,detail);return json({ok:true});
  }
+ if(path==='bridge/incoming'){
+  const input=z.object({
+   phone:z.string().regex(/^\d{8,16}$/),
+   text:z.string().max(2000),
+   senderName:z.string().max(100).default(''),
+   isFromMe:z.boolean().default(false)
+  }).parse(await body());
+  if(!input.isFromMe)await rateLimit(req,'whatsapp-ai:'+input.phone,30);
+  const {processIncomingWhatsApp}=await import('./openai-service');
+  const domain=runtime.PUBLIC_URL||new URL(req.url).origin;
+  const result=await processIncomingWhatsApp({
+   phone:input.phone,
+   text:input.text,
+   senderName:input.senderName,
+   isFromMe:input.isFromMe,
+   domain
+  });
+  return json(result);
+ }
  if(path==='bridge/heartbeat'){
   const input=z.object({runner:z.string().uuid(),state:z.enum(['disconnected','starting','qr','authenticated','ready','auth_failure','error']),qr:z.string().max(4096).default(''),phone:z.string().regex(/^$|^\d{8,15}$/).default('')}).parse(await body());
   const now=Date.now();
@@ -83,10 +118,10 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   // Resume only to resolve the local journal. A resumed job is never blindly resent.
   let job=await db().prepare("SELECT * FROM whatsapp_outbox WHERE status='processing' ORDER BY created_at LIMIT 1").first<any>();
   if(job&&job.worker_id!==bridge.token_hash){await db().prepare("UPDATE whatsapp_outbox SET status='uncertain',updated_at=? WHERE id=?").bind(now,job.id).run();await setResult(job.id,'uncertain','Conector substituído durante o envio. Confira a conversa antes de reenviar.');job=null}
-  let resumed=!!job;
+  const resumed=!!job;
   if(!job){const lease=token();job=await db().prepare("UPDATE whatsapp_outbox SET status='processing',lease_token=?,worker_id=?,updated_at=? WHERE id=(SELECT id FROM whatsapp_outbox WHERE status='queued' ORDER BY created_at LIMIT 1) AND status='queued' RETURNING *").bind(lease,bridge.token_hash,now).first<any>()}
   if(!job)return json({...current,job:null});
-  if(job.event==='Recuperação de senha'){
+  if(['Recuperação de senha','Atendimento','Orçamento recebido'].includes(job.event)){
    await setResult(job.id,'processing','Envio pelo WhatsApp conectado.');
    return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text:job.detail||'',resumed}});
   }
@@ -97,7 +132,8 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   }
   await setResult(job.id,'processing','Envio pelo WhatsApp conectado.');
   const domain = (raw&&!isBudget?unpackOrder(raw).data.domain:'')||runtime.PUBLIC_URL||new URL(req.url).origin;
-  const text = !raw?'':isBudget?budgetMessage({ ...raw, data: JSON.parse(raw.data) },domain):(job.recipient==='loja'?orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+domain+'/acompanhar/'+unpackOrder(raw).data.trackingToken:''));
+  const prefix = job.recipient === 'loja' ? (job.event === 'Pago' ? '💰 PAGAMENTO CONFIRMADO!\n\n' : '🔔 NOVO PEDIDO RECEBIDO!\n\n') : '';
+  const text = !raw?(job.detail||''):isBudget?budgetMessage({ ...raw, data: JSON.parse(raw.data) },domain):(job.recipient==='loja'?prefix+orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+domain+'/acompanhar/'+unpackOrder(raw).data.trackingToken:''));
   return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text,resumed}});
  }
  throw new HttpError(404,'Não encontrado');

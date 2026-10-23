@@ -4,7 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 const directory=process.env.CCA_BRIDGE_DATA_DIR||path.join(path.dirname(fileURLToPath(import.meta.url)),'data');
 export class Connection{
- constructor(createClient){this.createClient=createClient;this.client=null;this.state='disconnected';this.qr='';this.phone='';this.starting=null;this.stopping=null;this.lastAttempt=0;this.desired=false;this.revision=-1}
+ constructor(createClient, onMessage, onMessageCreate){this.createClient=createClient;this.onMessage=onMessage;this.onMessageCreate=onMessageCreate;this.client=null;this.state='disconnected';this.qr='';this.phone='';this.starting=null;this.stopping=null;this.lastAttempt=0;this.desired=false;this.revision=-1}
  snapshot(){return {state:this.state,qr:this.state==='qr'?this.qr:'',phone:this.phone}}
  async command(desired,revision){
   const changed=this.revision!==revision;this.revision=revision;this.desired=desired==='connected';
@@ -21,6 +21,8 @@ export class Connection{
   client.on('ready',()=>{if(current()){this.state='ready';this.qr='';this.phone=client.info?.wid?.user||''}});
   client.on('auth_failure',()=>{if(current()){this.state='auth_failure';this.qr=''}});
   client.on('disconnected',()=>{if(current()){this.state='disconnected';this.qr='';void this.stop(false)}});
+  if(this.onMessage){client.on('message',msg=>{if(current())this.onMessage(msg)});}
+  if(this.onMessageCreate){client.on('message_create',msg=>{if(current())this.onMessageCreate(msg)});}
   this.starting=client.initialize().catch((err)=>{console.error("Puppeteer/WA Error:", err); if(current()){this.state='error';this.qr='';void this.stop(false,'error')}}).finally(()=>{this.starting=null;if(!current())void client.destroy().catch(()=>{})});
  }
  async stop(logout,state='disconnected'){

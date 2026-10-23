@@ -31,3 +31,5 @@ export const costs=sqliteTable('costs',{id:text('id').primaryKey(),description:t
 
 // A failed guard aborts the complete D1 batch, without relying on SQL triggers.
 export const commerceGuards=sqliteTable('commerce_guards',{id:text('id').primaryKey(),valid:integer('valid').notNull()},t=>[check('commerce_guard_valid',sql`${t.valid}=1`)]);
+
+export const whatsappChats=sqliteTable('whatsapp_chats',{phone:text('phone').primaryKey(),history:text('history').notNull().default('[]'),handoverUntil:integer('handover_until').notNull().default(0),updatedAt:integer('updated_at').notNull().default(0)});

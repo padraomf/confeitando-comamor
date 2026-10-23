@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS whatsapp_chats (
+ phone TEXT PRIMARY KEY NOT NULL,
+ history TEXT NOT NULL DEFAULT '[]',
+ handover_until INTEGER NOT NULL DEFAULT 0,
+ updated_at INTEGER NOT NULL DEFAULT 0
+);

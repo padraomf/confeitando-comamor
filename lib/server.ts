@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { defaultSettings, initialProducts, categories, pixPayload, type StoreSettings } from './commerce';
-export const runtime=env as unknown as {DB?:D1Database;BUCKET?:R2Bucket;APP_SECRET?:string;ADMIN_SETUP_CODE?:string;ADMIN_ACTIVATION_HASH?:string;ADMIN_ACTIVATION_EXPIRES?:string;PUBLIC_URL?:string};
+export const runtime=env as unknown as {DB?:D1Database;BUCKET?:R2Bucket;APP_SECRET?:string;OPENAI_API_KEY?:string;ADMIN_SETUP_CODE?:string;ADMIN_ACTIVATION_HASH?:string;ADMIN_ACTIVATION_EXPIRES?:string;PUBLIC_URL?:string};
 export function db(){if(!runtime.DB)throw new Error('Serviço indisponível. Tente novamente em instantes.');return runtime.DB}
 export class HttpError extends Error{constructor(public status:number,message:string){super(message)}}
 export async function identity(){const user=await getChatGPTUser();if(!user)throw new HttpError(401,'Entre para salvar seu cadastro e continuar.');return user}

@@ -13,7 +13,7 @@ export async function extraRoutes(req:Request,path:string){
  if(/^tracking\/[a-f0-9-]{72}$/.test(path)&&req.method==='GET'){const token=path.split('/')[1];const raw=await db().prepare("SELECT * FROM orders WHERE json_extract(data,'$.trackingToken')=? LIMIT 1").bind(token).first<any>();if(!raw)throw new HttpError(404,'Pedido não encontrado');const o=unpackOrder(raw);return json({code:o.code,status:o.status,payment_status:o.payment_status,total:o.total,delivery:o.data.delivery,items:o.data.items,pickupCode:o.data.pickupCode,discountAmount:o.data.discountAmount,checkout_url:o.checkout_url,pixCode:o.data.pixCode,paymentProvider:o.data.paymentProvider})}
  if(/^tracking\/[a-f0-9-]{72}\/checkout$/.test(path)&&req.method==='POST'){
   const token=path.split('/')[1];
-  const bodyData = await req.json();
+  const bodyData = await req.json() as any;
   const paymentMethod = bodyData.paymentMethod;
   if (!['pix', 'card'].includes(paymentMethod)) throw new HttpError(422, 'Forma de pagamento inválida.');
   
