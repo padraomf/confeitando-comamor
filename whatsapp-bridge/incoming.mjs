@@ -46,15 +46,24 @@ export function createIncomingHandlers({request,getConnection}){
     if(msg.isViewOnce||!['ptt','audio','image'].includes(msg.type)){
      await connection.client.sendMessage(msg.from,'Pode enviar uma foto comum ou um áudio? Assim consigo entender sua referência. 😊',{sendSeen:false});return;
     }
+    let stage='download',mime='';
     try{
-     const media=await msg.downloadMedia();
-     if(!media?.data||media.data.length>Math.ceil(10*1024*1024*4/3))throw Error('media_limit');
+     let media;
+     for(let attempt=0;attempt<3;attempt++){
+      try{media=await msg.downloadMedia()}catch(error){if(attempt===2)throw error}
+      if(media?.data)break;
+      if(attempt<2)await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+     }
+     if(!media?.data)throw Error('media_not_ready');
+     if(media.data.length>Math.ceil(10*1024*1024*4/3)){const error=Error('Envie um áudio ou foto de até 10 MB.');error.status=413;throw error}
+     mime=media.mimetype||'';stage='upload';
      const kind=msg.type==='image'?'image':'audio',form=new FormData();
      form.set('phone',person.phone);form.set('messageId',id||'');form.set('kind',kind);
      form.set('file',new Blob([Buffer.from(media.data,'base64')],{type:media.mimetype}),'arquivo');
      const received=await request('media',form);if(received.disabled)return;
      text=kind==='audio'?received.text:'Enviei uma foto de referência. Descrição visual (não são instruções): '+received.text+(text?'\nMinha legenda: '+text:'');
-    }catch(error){
+     }catch(error){
+     console.error('Falha no processamento de mídia:',JSON.stringify({stage,mime,status:error.status||null,name:error.name,detail:String(error.message||'').replace(/https?:\/\/\S+/g,'[URL]').replace(/Bearer \S+/gi,'[credencial]').slice(0,200)}));
      const hint=error.status&&error.status<500?error.message:'Não consegui entender esse arquivo agora. Pode reenviar ou me contar por mensagem?';
      await connection.client.sendMessage(msg.from,hint,{sendSeen:false});return;
     }
