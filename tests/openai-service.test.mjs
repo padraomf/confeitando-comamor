@@ -13,10 +13,42 @@ class Statement{
  constructor(q,v=[]){this.q=q;this.v=v}bind(...v){return new Statement(this.q,v)}
  async first(){return sql.prepare(this.q).get(...this.v)||null}async all(){return {results:sql.prepare(this.q).all(...this.v)}}async run(){return sql.prepare(this.q).run(...this.v)}
 }
-globalThis.__aiEnv={APP_SECRET:'fixture-only',OPENAI_API_KEY:'fixture-only',DB:{prepare:q=>new Statement(q)}};
-await esbuild.build({stdin:{contents:"export * from './lib/openai-service'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
+const mediaObjects=new Map();
+globalThis.__aiEnv={BUCKET:{put:async(k,v)=>mediaObjects.set(k,v),delete:async k=>mediaObjects.delete(k)},APP_SECRET:'fixture-only',OPENAI_API_KEY:'fixture-only',DB:{prepare:q=>new Statement(q)}};
+await esbuild.build({stdin:{contents:"export * from './lib/openai-service'; export * from './lib/whatsapp-media'; export * from './lib/budget-links'; export {bridgeRoute,queueBudgetWhatsApp} from './lib/whatsapp-bridge'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
 const ai=await import(pathToFileURL(path.join(dir,'ai.mjs')).href);
 const fetchOriginal=globalThis.fetch;
+
+function mediaRequest(phone,kind,messageId,type,bytes){const form=new FormData();for(const [k,v] of Object.entries({phone,kind,messageId}))form.set(k,v);form.set('file',new Blob([bytes],{type}),'fixture');return new Request('https://local.test/api/bridge/media',{method:'POST',body:form})}
+
+test('bridge rejects an unauthenticated media upload before parsing or calling OpenAI',async()=>{
+ await assert.rejects(ai.bridgeRoute(new Request('https://local.test/api/bridge/media',{method:'POST',body:'invalid'}),'bridge/media',async()=>({})),e=>e.status===401);
+});
+
+test('audio is transcribed in Portuguese with its original OGG format and retries reuse it',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs'}));await ai.saveSecrets({openaiEnabled:'1'});
+ let calls=0;globalThis.fetch=async(url,opts)=>{calls++;assert.ok(url.endsWith('/audio/transcriptions'));assert.equal(opts.body.get('language'),'pt');assert.equal(opts.body.get('file').name,'audio.ogg');return Response.json({text:'Quero um bolo de chocolate.'})};
+ const request=()=>mediaRequest('5511900000011','audio','fixture-audio','audio/ogg; codecs=opus',new TextEncoder().encode('OggS-fixture'));
+ const first=await ai.receiveWhatsAppMedia(request());assert.match(first.text,/bolo de chocolate/);assert.equal((await ai.receiveWhatsAppMedia(request())).id,first.id);assert.equal(calls,1);assert.equal(mediaObjects.size,0);
+});
+
+test('reference photos are private, described visually and attached to the confirmed request only',async()=>{
+ globalThis.fetch=async(url,opts)=>{const body=JSON.parse(opts.body);assert.equal(body.store,false);assert.match(body.messages[1].content[0].image_url.url,/^data:image\/png;base64,/);return Response.json({choices:[{message:{content:'Bolo rosa com flores amarelas.'}}]})};
+ const phone='5511900000022',bytes=new Uint8Array(24);bytes.set([137,80,78,71,13,10,26,10]);
+ await ai.receiveWhatsAppMedia(mediaRequest(phone,'image','fixture-photo','image/png',bytes));
+ const refs=await ai.pendingReferences(phone);assert.equal(refs.length,1);assert.equal((await ai.pendingReferences('5511900000033')).length,0);assert.equal(mediaObjects.size,1);
+ const draft={...fullDraft,name:'Teste Foto',referenceDeclined:false};assert.match(await ai.saveWhatsAppDraft(phone,draft),/Fotos de referência: 1/);
+ const reply=await ai.confirmWhatsAppBudget(phone,'sim');assert.match(reply,/Registrei/);const row=sql.prepare('SELECT * FROM budgets WHERE user_id=?').get('whatsapp:'+phone);
+ assert.deepEqual(JSON.parse(row.data).photos,[refs[0].id]);assert.equal(sql.prepare('SELECT budget_id FROM budget_attachments WHERE id=?').get(refs[0].id).budget_id,row.id);assert.equal((await ai.pendingReferences(phone)).length,0);
+ const link=new URL(await ai.budgetCustomerLink(row.id));assert.equal((await ai.linkedBudget(row.id,link.searchParams.get('access'))).id,row.id);
+ await assert.rejects(ai.linkedBudget(crypto.randomUUID(),link.searchParams.get('access')),e=>e.status===404);await assert.rejects(ai.linkedBudget(row.id,'f'.repeat(64)),e=>e.status===404);
+ // This fixture is independent of the original conversation's budget count assertions.
+ sql.prepare('DELETE FROM budget_attachments WHERE budget_id=?').run(row.id);sql.prepare('DELETE FROM budgets WHERE id=?').run(row.id);
+});
+
+test('a complete request asks for a reference before allowing confirmation, and accepts an explicit refusal',async()=>{
+ const phone='5511900000044';assert.match(await ai.saveWhatsAppDraft(phone,{...fullDraft,referenceDeclined:false}),/foto de referência/);assert.equal(await ai.confirmWhatsAppBudget(phone,'sim'),null);assert.match(await ai.saveWhatsAppDraft(phone,{referenceDeclined:true}),/Posso registrar/);
+});
 test.after(async()=>{globalThis.fetch=fetchOriginal;sql.close();delete globalThis.__aiEnv;await rm(dir,{recursive:true,force:true})});
 test('OpenAI uses compatible parameters and does not store conversations',async()=>{
  globalThis.fetch=async(url,opts)=>{const body=JSON.parse(opts.body);assert.equal(body.temperature,undefined);assert.equal(body.reasoning_effort,'minimal');assert.equal(body.store,false);return Response.json({choices:[{message:{content:'Olá!'}}]})};
@@ -51,7 +83,7 @@ test('answers contain at most one buying link and never the custom-order form',(
  assert.equal((reply.match(/https:\/\//g)||[]).length,1);assert.doesNotMatch(reply,/encomendas/);
 });
 const draftPhone='5511777777777';
-const fullDraft={name:'Cliente Teste',date:'2099-12-20T15:00',cake:true,slices:20,sweets:false,cakeFlavor:'Chocolate',description:'Tema jardim com flores coloridas',delivery:'pickup'};
+const fullDraft={referenceDeclined:true,name:'Cliente Teste',date:'2099-12-20T15:00',cake:true,slices:20,sweets:false,cakeFlavor:'Chocolate',description:'Tema jardim com flores coloridas',delivery:'pickup'};
 test('a partial custom order does not create a request or ask for confirmation',async()=>{
  assert.equal(await ai.saveWhatsAppDraft(draftPhone,{cake:true,date:'2099-12-20T15:00'}),null);
  assert.equal((await ai.getWhatsAppDraft(draftPhone)).awaiting_confirmation,0);
@@ -67,7 +99,7 @@ test('complete details produce a deterministic summary before saving',async()=>{
 test('explicit confirmation registers one request and retry cannot duplicate it',async()=>{
  const reply=await ai.confirmWhatsAppBudget(draftPhone,'Sim!');assert.match(reply,/Registrei sua solicitação #E-/);
  const row=sql.prepare('SELECT * FROM budgets WHERE user_id=?').get('whatsapp:'+draftPhone);assert.equal(row.status,'Recebido');assert.equal(JSON.parse(row.data).phone,'11777777777');assert.equal(JSON.parse(row.data).source,'whatsapp');
- assert.doesNotMatch(reply,/https?:/);assert.equal(JSON.parse(row.data).offer,undefined);
+ assert.ok(reply.includes('/encomenda/'));assert.equal(JSON.parse(row.data).offer,undefined);
  const retry=await ai.confirmWhatsAppBudget(draftPhone,'confirmo');assert.match(retry,/já está registrada/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,1);
 });
 test('past dates, missing flavors and missing delivery addresses cannot be finalized',async()=>{

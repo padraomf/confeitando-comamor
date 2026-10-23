@@ -1,3 +1,4 @@
+import {whatsappLoginRoute} from './whatsapp-login';
 import {z} from 'zod';
 import {db,HttpError} from './server';
 import {customer,guest,shopper,token,digest,newSession,setSessionCookie,revoke,authLimit,rateLimit,passwordHash,passwordMatches,dummyHash} from './customer-auth';
@@ -6,6 +7,7 @@ const emailOrPhoneSchema=z.string().trim().toLowerCase().max(254);
 const passwordSchema=z.string().min(6,'Use uma senha com pelo menos 6 caracteres').max(128,'Use até 128 caracteres');
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function customerRoute(req:Request,path:string,body:()=>Promise<any>):Promise<Response|null>{
+ if(path==='customer/whatsapp-code'||path==='customer/whatsapp-login')return whatsappLoginRoute(req,path,body);
  if(path==='customer/session'&&req.method==='GET'){const user=await customer(req),visitor=user?null:await guest(req);return json({signedIn:!!user,guest:!!visitor,user:user?{name:user.displayName,email:user.email}:null})}
  if(path==='customer/guest'&&req.method==='POST'){const existing=await guest(req);if(existing)return json({guest:true});await rateLimit(req,'guest:'+(req.headers.get('cf-connecting-ip')||'shared'),60);const value=await newSession('guest_'+crypto.randomUUID(),true);const response=json({guest:true});response.headers.set('Set-Cookie',setSessionCookie(value,true));return response;}
  if(path==='customer/lookup-phone'&&req.method==='POST'){

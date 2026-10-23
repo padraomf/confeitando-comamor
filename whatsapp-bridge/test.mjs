@@ -13,6 +13,22 @@ const {Connection}=await import('./connection.mjs');
 test.after(()=>rmSync(connectionData,{recursive:true,force:true}));
 import {trackAutomaticMessages,createIncomingHandlers} from './incoming.mjs';
 const job={id:'fixture-order-cliente',leaseToken:'a'.repeat(64),phone:'5511999999999',text:'Pedido fictício',resumed:false};
+
+test('voice notes without text and reference photos with captions use the media endpoint',async()=>{
+ const calls=[],sent=[],client={sendMessage:async(to,text)=>sent.push(text)};
+ const handlers=createIncomingHandlers({getConnection:()=>({client,isReady:()=>true}),request:async(route,data)=>{calls.push({route,data});return route==='media'?{text:data.get('kind')==='audio'?'Quero um bolo':'Bolo com flores'}:{reply:'Entendi!'}}});
+ const base={from:'5511999999999@c.us',hasMedia:true,body:'',type:'ptt',id:{_serialized:'voice'},downloadMedia:async()=>({mimetype:'audio/ogg; codecs=opus',data:Buffer.from('OggS-fixture').toString('base64')})};
+ await handlers.incoming(base);assert.equal(calls[0].route,'media');assert.equal(calls[1].data.text,'Quero um bolo');
+ await handlers.incoming({...base,type:'image',body:'Quero em azul',id:{_serialized:'photo'}});assert.equal(calls[2].data.get('kind'),'image');assert.match(calls[3].data.text,/Quero em azul/);assert.equal(sent.length,2);
+ await handlers.incoming({...base,isViewOnce:true,id:{_serialized:'private'}});assert.equal(calls.length,4);assert.match(sent.at(-1),/foto comum/);
+});
+
+test('media failures ask for a resend and never invent a transcription',async()=>{
+ const sent=[],calls=[],client={sendMessage:async(to,text)=>sent.push(text)};
+ const handlers=createIncomingHandlers({getConnection:()=>({client,isReady:()=>true}),request:async(route)=>{calls.push(route);throw Error('fixture failure')}});
+ await handlers.incoming({from:'5511999999999@c.us',hasMedia:true,type:'ptt',body:'',id:{_serialized:'failure'},downloadMedia:async()=>({mimetype:'audio/ogg',data:'YWJj'})});
+ assert.deepEqual(calls,['media']);assert.match(sent[0],/reenviar/);
+});
 test('automatic responses are not treated as human handovers',async()=>{const client={sendMessage:async()=>({})};const consume=trackAutomaticMessages(client);await client.sendMessage('5511999999999@c.us','Resposta automática');assert.equal(consume({to:'5511999999999@c.us',body:'Resposta automática'}),true);assert.equal(consume({to:'5511999999999@c.us',body:'Resposta humana'}),false)});
 test('incoming messages resolve LID numbers, deduplicate events, and ignore groups',async()=>{const requests=[];const connection={isReady:()=>true,client:{sendMessage:async()=>({}),getContactLidAndPhone:async()=>[{lid:'123@lid',pn:'5511999999999@c.us'}]}};const handlers=createIncomingHandlers({request:async(route,data)=>{requests.push(data);return {reply:'Resposta'}},getConnection:()=>connection});handlers.prepareClient(connection.client);const msg={from:'123@lid',body:'Olá',id:{_serialized:'m1'},getContact:async()=>({number:'123',id:{server:'lid',user:'123'}})};await handlers.incoming(msg);await handlers.incoming(msg);await handlers.incoming({...msg,from:'123@g.us'});assert.equal(requests.length,1);assert.equal(requests[0].phone,'5511999999999');await handlers.created({fromMe:true,to:'123@lid',body:'Resposta',getContact:msg.getContact});assert.equal(requests.length,1);await handlers.created({fromMe:true,to:'123@lid',body:'Sou a atendente',getContact:msg.getContact});assert.equal(requests.at(-1).isFromMe,true)});
 function fixture(){const directory=mkdtempSync(path.join(tmpdir(),'cca-bridge-'));let sends=0;const reports=[];return {directory,ledger:journal(directory),reports,get sends(){return sends},client:{getNumberId:async()=>({_serialized:'fixture@c.us'}),sendMessage:async()=>{sends++;return {id:{_serialized:'fixture-message'}}}},report:async r=>reports.push(r),close:()=>rmSync(directory,{recursive:true,force:true})}}

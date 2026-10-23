@@ -41,7 +41,7 @@ async function handler(req:Request){try{
  const catalogAction=await catalogAdminRoutes(req,path,()=>body(req));if(catalogAction)return catalogAction;
  const extra=await extraRoutes(req,path);if(extra)return extra;
  const panelResponse=await panelAuthRoute(req,path,()=>body(req));if(panelResponse)return panelResponse;
- if(path==='budgets'||path.startsWith('budgets/')||path==='budget-photos'||path.startsWith('budget-images/')||path==='admin/budgets'||path.startsWith('admin/budgets/')){const r=await budgetRoute(req,path,()=>body(req));if(r)return r}
+ if(path.startsWith('budget-link/')||path==='budgets'||path.startsWith('budgets/')||path==='budget-photos'||path.startsWith('budget-images/')||path==='admin/budgets'||path.startsWith('admin/budgets/')){const r=await budgetRoute(req,path,()=>body(req));if(r)return r}
  const customerResponse=path.startsWith('customer/')?await customerRoute(req,path,()=>body(req)):null;if(customerResponse)return customerResponse;
  if(path.startsWith('images/')&&method==='GET'){
  const key=path.slice(7);if(!/^[a-f0-9-]+\.(jpg|png|webp)$/.test(key))throw new HttpError(404,'Foto não encontrada');

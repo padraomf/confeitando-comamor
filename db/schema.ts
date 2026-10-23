@@ -1,5 +1,5 @@
 import {sql} from 'drizzle-orm';
-import {sqliteTable,text,integer,index,primaryKey,check} from 'drizzle-orm/sqlite-core';
+import {sqliteTable,text,integer,index,uniqueIndex,primaryKey,check} from 'drizzle-orm/sqlite-core';
 export const settings=sqliteTable('settings',{key:text('key').primaryKey(),value:text('value').notNull()});
 export const adminAccounts=sqliteTable('admin_accounts',{id:text('id').primaryKey(),name:text('name').notNull(),login:text('login').notNull().unique(),role:text('role').notNull().default('admin'),active:integer('active').notNull().default(1),passwordHash:text('password_hash').notNull(),createdAt:integer('created_at').notNull()});
 export const adminSessions=sqliteTable('admin_sessions',{tokenHash:text('token_hash').primaryKey(),accountId:text('account_id').notNull().references(()=>adminAccounts.id,{onDelete:'cascade'}),expires:integer('expires').notNull()},t=>[index('admin_sessions_account').on(t.accountId)]);
@@ -37,3 +37,6 @@ export const whatsappChats=sqliteTable('whatsapp_chats',{phone:text('phone').pri
 export const whatsappBudgetDrafts=sqliteTable('whatsapp_budget_drafts',{phone:text('phone').primaryKey(),requestId:text('request_id').notNull().unique(),draft:text('draft').notNull().default('{}'),awaitingConfirmation:integer('awaiting_confirmation').notNull().default(0),budgetId:text('budget_id'),updatedAt:integer('updated_at').notNull().default(0)});
 
 export const whatsappContacts=sqliteTable('whatsapp_contacts',{phone:text('phone').primaryKey(),name:text('name'),stage:text('stage').notNull().default('ask_name'),userId:text('user_id'),updatedAt:integer('updated_at').notNull().default(0)});
+
+export const whatsappMedia=sqliteTable('whatsapp_media',{id:text('id').primaryKey(),phone:text('phone').notNull(),messageId:text('message_id').notNull(),kind:text('kind').notNull(),text:text('text').notNull(),attachmentId:text('attachment_id'),consumed:integer('consumed').notNull().default(0),createdAt:integer('created_at').notNull()},t=>[uniqueIndex('whatsapp_media_message').on(t.phone,t.messageId),index('whatsapp_media_pending').on(t.phone,t.consumed,t.createdAt)]);
+export const whatsappLoginCodes=sqliteTable('whatsapp_login_codes',{id:text('id').primaryKey(),phone:text('phone').notNull(),userId:text('user_id').notNull(),codeHash:text('code_hash').notNull(),expires:integer('expires').notNull(),attempts:integer('attempts').notNull().default(0)},t=>[index('whatsapp_login_phone').on(t.phone)]);

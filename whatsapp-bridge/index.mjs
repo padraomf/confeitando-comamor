@@ -15,7 +15,7 @@ if(!config?.token||!config?.site){console.error('Configure CCA_TOKEN e CCA_SITE 
 const site=new URL(config.site);
 const runner=randomUUID(),ledger=journal(path.join(directory,'journal'));
 async function request(route,body){
- const response=await fetch(site.origin+'/api/bridge/'+route,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.token},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(route==='incoming'?45000:15000)});
+ const response=await fetch(site.origin+'/api/bridge/'+route,{method:'POST',headers:{...(body instanceof FormData?{}:{'Content-Type':'application/json'}),Authorization:'Bearer '+config.token},body:body instanceof FormData?body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(route==='media'?75000:route==='incoming'?60000:15000)});
  const result=await response.json();if(!response.ok){const error=new Error(result.error||'Falha na comunicação com o site');error.status=response.status;throw error}return result;
 }
 const handlers=createIncomingHandlers({request,getConnection:()=>connection});

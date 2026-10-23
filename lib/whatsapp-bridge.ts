@@ -1,3 +1,4 @@
+import {budgetCustomerLink} from './budget-links';
 import {z} from 'zod';
 import {db,HttpError,settings,putSetting,unpackOrder,runtime} from './server';
 import {digest,token,rateLimit} from './customer-auth';
@@ -28,14 +29,14 @@ export async function bridgeCommand(command:'connect'|'disconnect'){
 export async function queueBudgetWhatsApp(budget:any){
  const config=await settings();if(!config.whatsappEnabled||config.whatsappMode!=='webjs')return;
  const rec=budget.data.phone;
- const id=budget.id+'-cliente-Orçamento enviado';if(!/^\d{10,11}$/.test(rec))return;
+ const id=budget.id+'-cliente-Orçamento enviado-'+(budget.data.offer?.version||'initial');if(!/^\d{10,11}$/.test(rec))return;
  await db().prepare('INSERT OR IGNORE INTO whatsapp_outbox(id,order_id,recipient,phone,status,created_at,updated_at,event) VALUES(?,?,?,?,?,?,?,?)').bind(id,budget.id,'cliente','55'+rec,'queued',Date.now(),Date.now(),'Orçamento enviado').run();
 }
 export async function queueBudgetAlertWhatsApp(budget:any){
  const config=await settings();if(!config.whatsappEnabled||config.whatsappMode!=='webjs')return;
  const storePhones:string[]=config.adminNotifyPhones?.length?config.adminNotifyPhones:['5574988218637','5574988546993'];
  const data=typeof budget.data==='string'?JSON.parse(budget.data):budget.data;
- const text=`📝 NOVO PEDIDO DE ORÇAMENTO (#${budget.code})!\n\nCliente: ${data.name}\nWhatsApp: 55${data.phone}\nData do evento: ${data.date||'A combinar'}\nBolo: ${data.cakeFlavor||'Padrão'} (${data.slices||0} fatias)\nDocinhos: ${data.sweetFlavor||'Nenhum'}\n\nAcesse o painel em Orçamentos para enviar a proposta.`;
+ const text=`📝 NOVO PEDIDO DE ORÇAMENTO (#${budget.code})!\n\nCliente: ${data.name}\nWhatsApp: 55${data.phone}\nData do evento: ${data.date||'A combinar'}\nBolo: ${data.cakeFlavor||'Padrão'} (${data.slices||0} fatias)\nDocinhos: ${data.sweetFlavor||'Nenhum'}\n\nAnalise e envie o valor:\n${runtime.PUBLIC_URL||'https://confeitandocomamor.com.br'}/painel/orcamentos#${budget.id}`;
  for(const phone of storePhones){
   const clean=phone.replace(/\D/g,'');
   const id=`${budget.id}-loja-${clean}-recebido`;
@@ -80,6 +81,7 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   return json({token:credential},201);
  }
  const bridge=await bridgeIdentity(req);
+ if(path==='bridge/media'){const {receiveWhatsAppMedia}=await import('./whatsapp-media');return json(await receiveWhatsAppMedia(req))}
  if(path==='bridge/result'){
   const input=z.object({id:z.string().max(100),leaseToken:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(['sent','uncertain','failed']),messageId:z.string().max(250).default('')}).parse(await body());
   if(input.status==='sent'&&!input.messageId)throw new HttpError(422,'O envio precisa do identificador retornado pelo WhatsApp.');
@@ -91,7 +93,7 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
  if(path==='bridge/incoming'){
   const input=z.object({
    phone:z.string().regex(/^\d{8,16}$/),
-   text:z.string().max(2000),
+   text:z.string().max(6000),
    senderName:z.string().max(100).default(''),
    isFromMe:z.boolean().default(false)
   }).parse(await body());
@@ -121,19 +123,20 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   const resumed=!!job;
   if(!job){const lease=token();job=await db().prepare("UPDATE whatsapp_outbox SET status='processing',lease_token=?,worker_id=?,updated_at=? WHERE id=(SELECT id FROM whatsapp_outbox WHERE status='queued' ORDER BY created_at LIMIT 1) AND status='queued' RETURNING *").bind(lease,bridge.token_hash,now).first<any>()}
   if(!job)return json({...current,job:null});
-  if(['Recuperação de senha','Atendimento','Orçamento recebido'].includes(job.event)){
+  if(['Recuperação de senha','Atendimento','Orçamento recebido','Código de acesso'].includes(job.event)){
+   if(job.event==='Código de acesso'&&job.created_at<Date.now()-600000){await db().prepare("UPDATE whatsapp_outbox SET status='skipped',updated_at=? WHERE id=?").bind(Date.now(),job.id).run();return json({...current,job:null})}
    await setResult(job.id,'processing','Envio pelo WhatsApp conectado.');
    return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text:job.detail||'',resumed}});
   }
   const isBudget=job.event==='Orçamento enviado';
   const raw=await db().prepare(`SELECT * FROM ${isBudget?'budgets':'orders'} WHERE id=?`).bind(job.order_id).first<any>();
-  if(!resumed&&(!raw||(job.event==='Pago'&&raw.payment_status!=='Pago')||(!isBudget&&job.event!=='Pago'&&job.event!=='Cobrança manual'&&job.event!==raw.status)||job.created_at<now-600000)){
+  if(!resumed&&(!raw||(isBudget&&(raw.status!=='Orçamento enviado'||job.id!==raw.id+'-cliente-Orçamento enviado-'+(JSON.parse(raw.data).offer?.version||'initial')))||(job.event==='Pago'&&raw.payment_status!=='Pago')||(!isBudget&&job.event!=='Pago'&&job.event!=='Cobrança manual'&&job.event!==raw.status)||job.created_at<now-600000)){
    const detail=raw?.status==='Cancelado'?'Pedido cancelado.':'Aviso expirado (mais de 10 minutos na fila). O próximo aviso conterá a situação atualizada.';await db().prepare("UPDATE whatsapp_outbox SET status='skipped',updated_at=?,detail=? WHERE id=?").bind(now,detail,job.id).run();await setResult(job.id,'skipped',detail);return json({...current,job:null});
   }
   await setResult(job.id,'processing','Envio pelo WhatsApp conectado.');
   const domain = (raw&&!isBudget?unpackOrder(raw).data.domain:'')||runtime.PUBLIC_URL||new URL(req.url).origin;
   const prefix = job.recipient === 'loja' ? (job.event === 'Pago' ? '💰 PAGAMENTO CONFIRMADO!\n\n' : '🔔 NOVO PEDIDO RECEBIDO!\n\n') : '';
-  const text = !raw?(job.detail||''):isBudget?budgetMessage({ ...raw, data: JSON.parse(raw.data) },domain):(job.recipient==='loja'?prefix+orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+domain+'/acompanhar/'+unpackOrder(raw).data.trackingToken:''));
+  const text = !raw?(job.detail||''):isBudget?budgetMessage({ ...raw, data: JSON.parse(raw.data) },domain,await budgetCustomerLink(raw.id,domain)):(job.recipient==='loja'?prefix+orderMessage(unpackOrder(raw)):eventMessage(unpackOrder(raw),job.event)+(unpackOrder(raw).data.trackingToken?'\n\n📋 Acompanhe: '+domain+'/acompanhar/'+unpackOrder(raw).data.trackingToken:''));
   return json({...current,job:{id:job.id,leaseToken:job.lease_token,phone:job.phone,text,resumed}});
  }
  throw new HttpError(404,'Não encontrado');

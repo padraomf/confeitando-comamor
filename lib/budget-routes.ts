@@ -1,3 +1,4 @@
+import {linkedBudget} from './budget-links';
 import {businessStatus} from './store-hours';
 import {paymentAllowed} from './payment-options';
 import {paymentReady} from './payment-connect';
@@ -16,6 +17,11 @@ export const budgetSchema=z.object({requestId:z.string().uuid(),delivery:z.enum(
 function unpack(row:any){return {...row,data:JSON.parse(row.data)}}
 export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>){
  const json=(v:unknown,status=200)=>Response.json(v,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}}),method=req.method;
+ if(path.startsWith('budget-link/')&&method==='GET'){
+  const b=await linkedBudget(path.slice(12),new URL(req.url).searchParams.get('access'));
+  if(b.data.orderId){const o=await db().prepare('SELECT data FROM orders WHERE id=? AND user_id=?').bind(b.data.orderId,b.user_id).first<any>();const tracking=o?JSON.parse(o.data).trackingToken:null;if(tracking)b.data.orderUrl='/acompanhar/'+tracking}
+  const store=await settings(),s=await secrets();return json({budget:{id:b.id,code:b.code,status:b.status,data:b.data},config:{settings:store,onlinePayment:paymentReady(s,store.paymentProvider)}});
+ }
  if(path.startsWith('budget-images/')&&method==='GET'){
   const id=path.slice(14);if(!z.string().uuid().safeParse(id).success)throw new HttpError(404,'Foto não encontrada.');
   const a=await db().prepare('SELECT * FROM budget_attachments WHERE id=?').bind(id).first<any>();if(!a)throw new HttpError(404,'Foto não encontrada.');
@@ -53,7 +59,8 @@ export async function budgetRoute(req:Request,path:string,body:()=>Promise<any>)
   }
  }
  if(/^budgets\/[^/]+\/answer$/.test(path)&&method==='POST'){
-  const u=await shopper(req),input=z.object({version:z.string().uuid(),accept:z.boolean(),payment:z.enum(['cash','pix','card','card_machine']).optional(),paymentAmount:z.enum(['deposit','total']).optional(),email:z.union([z.string().email(),z.literal('')]).default(''),cpf:z.string().max(20).default('')}).parse(await body()),id=path.split('/')[1];
+  const access=new URL(req.url).searchParams.get('access'),budgetId=path.split('/')[1];
+  const u=access?{userId:(await linkedBudget(budgetId,access)).user_id}:await shopper(req),input=z.object({version:z.string().uuid(),accept:z.boolean(),payment:z.enum(['cash','pix','card','card_machine']).optional(),paymentAmount:z.enum(['deposit','total']).optional(),email:z.union([z.string().email(),z.literal('')]).default(''),cpf:z.string().max(20).default('')}).parse(await body()),id=path.split('/')[1];
   const raw=await db().prepare('SELECT * FROM budgets WHERE id=? AND user_id=?').bind(id,u.userId).first<any>();if(!raw)throw new HttpError(404,'Orçamento não encontrado.');const budget=unpack(raw),offer=budget.data.offer;
   if(budget.status==='Convertido em pedido'){const order=await db().prepare('SELECT * FROM orders WHERE id=? AND user_id=?').bind(budget.data.orderId,u.userId).first<any>();return json({order:order?unpackOrder(order):null,budget})}
   if(budget.status!=='Orçamento enviado'||!offer||offer.version!==input.version)throw new HttpError(409,'O orçamento mudou. Atualize para conferir os novos valores.');

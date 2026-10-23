@@ -1,5 +1,6 @@
 // Real SQLite and password hashing. External services are mocked; no payments/messages are sent.
 import assert from 'node:assert/strict';
+import {createHmac} from 'node:crypto';
 import jsQR from 'jsqr';
 import {DatabaseSync} from 'node:sqlite';
 import {createRequire} from 'node:module';
@@ -436,6 +437,36 @@ sql.prepare('DELETE FROM admin_sessions').run();sql.prepare('DELETE FROM admin_a
 sql.prepare('DELETE FROM settings WHERE key=?').run('admin_activation_used:'+activationHash);
 beforeBatch=queries=>{if(queries.some(q=>q.query.includes('commerce_guards')&&q.values[0]?.startsWith('activation:'))){beforeBatch=null;sql.prepare("INSERT INTO admin_accounts(id,name,login,password_hash,created_at,role) VALUES(?,?,?,?,?,'admin')").run(crypto.randomUUID(),'Existing admin','existing.admin',activated.password_hash,Date.now())}};
 r=await activation.request('admin/activate','POST',activationBody);ok(r.status===409&&!sql.prepare('SELECT value FROM settings WHERE key=?').get('admin_activation_used:'+activationHash)&&sql.prepare('SELECT COUNT(*) n FROM admin_accounts').get().n===1,'Concurrent first access rolls back code consumption and preserves the existing administrator');
+
+// WhatsApp-only customers keep the exact same profile and history after proving the phone.
+globalThis.__testUser=null;
+const phoneLogin=client('10.99.0.1'),waPhone='11990000123',waUser='whatsapp:55'+waPhone;
+sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(waUser,JSON.stringify({name:'Cliente WhatsApp',phone:waPhone,email:''}),Date.now());
+const waStore=JSON.parse(sql.prepare("SELECT value FROM settings WHERE key='store'").get().value);waStore.whatsappEnabled=true;waStore.whatsappMode='webjs';
+sql.prepare("UPDATE settings SET value=? WHERE key='store'").run(JSON.stringify(waStore));
+sql.prepare("INSERT INTO whatsapp_bridge(id,token_hash,desired,state,last_seen) VALUES('store','fixture-code-token','connected','ready',?) ON CONFLICT(id) DO UPDATE SET desired='connected',state='ready',last_seen=excluded.last_seen").run(Date.now());
+r=await phoneLogin.request('customer/whatsapp-code','POST',{phone:waPhone});ok(r.status===200&&r.challenge&&!r.code,'WhatsApp code is queued without returning it to the browser');const challenge=r.challenge;
+const queuedLogin=sql.prepare('SELECT detail FROM whatsapp_outbox WHERE id=?').get('login-'+challenge),loginCode=queuedLogin.detail.match(/\*(\d{6})\*/)[1];
+ok(sql.prepare('SELECT code_hash FROM whatsapp_login_codes WHERE id=?').get(challenge).code_hash!==loginCode,'Login code is hashed and tied to its challenge');
+r=await phoneLogin.request('customer/whatsapp-login','POST',{challenge,code:loginCode==='000000'?'111111':'000000'});ok(r.status===401,'Wrong WhatsApp code cannot create a session');
+r=await phoneLogin.request('customer/whatsapp-login','POST',{challenge,code:loginCode});ok(r.status===200&&r.headers.get('set-cookie').includes('HttpOnly'),'Correct one-use WhatsApp code starts a protected customer session');
+r=await phoneLogin.request('customer/session');ok(r.user.name==='Cliente WhatsApp'&&sql.prepare('SELECT id FROM customers WHERE id=?').get(waUser),'Phone login preserves the profile name and identity');
+r=await phoneLogin.request('customer/whatsapp-login','POST',{challenge,code:loginCode});ok(r.status===401,'A used WhatsApp login code cannot be replayed');
+r=await phoneLogin.request('customer/whatsapp-code','POST',{phone:waPhone});const lockedChallenge=r.challenge;
+for(let i=0;i<5;i++)await phoneLogin.request('customer/whatsapp-login','POST',{challenge:lockedChallenge,code:'000000'});
+const lockedCode=sql.prepare('SELECT detail FROM whatsapp_outbox WHERE id=?').get('login-'+lockedChallenge).detail.match(/\*(\d{6})\*/)[1];
+r=await phoneLogin.request('customer/whatsapp-login','POST',{challenge:lockedChallenge,code:lockedCode});ok(r.status===401,'Five wrong guesses invalidate a WhatsApp login challenge');
+r=await phoneLogin.request('customer/whatsapp-code','POST',{phone:'11990000456'});ok(r.status===200&&r.challenge&&!sql.prepare('SELECT id FROM whatsapp_login_codes WHERE id=?').get(r.challenge),'Unknown phones receive the same public response without an account or code');
+
+// A private budget link is scoped to one request and supports approval without a preexisting cookie.
+const linkedId=crypto.randomUUID(),linkedOffer={total:20000,fee:0,deposit:6000,expires:'2099-12-20',terms:'Condições da encomenda de teste',version:crypto.randomUUID()},linkedData={...budget,photos:[],offer:linkedOffer};
+sql.prepare('INSERT INTO budgets(id,user_id,request_id,code,data,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(linkedId,waUser,crypto.randomUUID(),'E-LINKTEST',JSON.stringify(linkedData),'Orçamento enviado',Date.now(),Date.now());
+const linkedAccess=createHmac('sha256',globalThis.__testEnv.APP_SECRET).update('budget-access-v1:'+linkedId).digest('hex'),newBrowser=client('10.99.0.2');
+r=await newBrowser.request('budget-link/'+linkedId+'?access='+linkedAccess);ok(r.status===200&&r.budget.code==='E-LINKTEST','Customer can open the exact WhatsApp budget link in another browser');
+r=await newBrowser.request('budget-link/'+crypto.randomUUID()+'?access='+linkedAccess);ok(r.status===404,'A budget access token cannot open another request');
+r=await newBrowser.request('budgets/'+linkedId+'/answer?access='+linkedAccess,'POST',{version:crypto.randomUUID(),accept:true,payment:'cash'});ok(r.status===409,'Private link approval still requires the current offer version');
+r=await newBrowser.request('budgets/'+linkedId+'/answer?access='+linkedAccess,'POST',{version:linkedOffer.version,accept:true,payment:'cash'});ok(r.status===201&&r.order.total===20000&&r.order.data.trackingToken,'Private link approves the agreed value and returns an order tracking link');
+const linkOrderId=r.order.id;r=await newBrowser.request('budgets/'+linkedId+'/answer?access='+linkedAccess,'POST',{version:linkedOffer.version,accept:true,payment:'cash'});ok(r.status===200&&r.order.id===linkOrderId,'Repeated private link approval never duplicates the order');
 
 console.log(`Verified ${count} checks. No real payment or message sent.`);
 }finally{sql.close();await rm(dir,{recursive:true,force:true})}
