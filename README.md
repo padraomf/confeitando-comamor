@@ -37,6 +37,8 @@ Atendimento automático: configure `OPENAI_API_KEY` como segredo do Worker (ou u
 
 O assistente consulta o catálogo e as regras atuais; o relatório Graphify exibido no painel é um retrato técnico incluído na compilação. O teste no painel chama a API sem enviar WhatsApp. Testes locais adicionais: `node --test tests/openai-service.test.mjs whatsapp-bridge/test.mjs`.
 
+O atendimento recebe novos contatos perguntando o nome e confirmando o número da conversa antes de criar o perfil na lista Clientes. Cadastros existentes são reconhecidos pelo telefone; senhas e sessões de acesso não são criadas ou alteradas por esse fluxo. Encomendas são coletadas na conversa, resumidas para confirmação e registradas uma única vez em Orçamentos, com a situação Recebido. A equipe confirma preço e disponibilidade. A migração aditiva `0013_whatsapp_budget_drafts.sql` guarda a recepção e os rascunhos. O atendimento envia no máximo um link relevante por resposta e não direciona encomendas para o formulário.
+
 ```
 node tests/commerce.test.mjs
 node --test whatsapp-bridge/test.mjs

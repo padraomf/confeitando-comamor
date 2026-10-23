@@ -33,3 +33,7 @@ export const costs=sqliteTable('costs',{id:text('id').primaryKey(),description:t
 export const commerceGuards=sqliteTable('commerce_guards',{id:text('id').primaryKey(),valid:integer('valid').notNull()},t=>[check('commerce_guard_valid',sql`${t.valid}=1`)]);
 
 export const whatsappChats=sqliteTable('whatsapp_chats',{phone:text('phone').primaryKey(),history:text('history').notNull().default('[]'),handoverUntil:integer('handover_until').notNull().default(0),updatedAt:integer('updated_at').notNull().default(0)});
+
+export const whatsappBudgetDrafts=sqliteTable('whatsapp_budget_drafts',{phone:text('phone').primaryKey(),requestId:text('request_id').notNull().unique(),draft:text('draft').notNull().default('{}'),awaitingConfirmation:integer('awaiting_confirmation').notNull().default(0),budgetId:text('budget_id'),updatedAt:integer('updated_at').notNull().default(0)});
+
+export const whatsappContacts=sqliteTable('whatsapp_contacts',{phone:text('phone').primaryKey(),name:text('name'),stage:text('stage').notNull().default('ask_name'),userId:text('user_id'),updatedAt:integer('updated_at').notNull().default(0)});
