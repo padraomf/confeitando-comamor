@@ -6,16 +6,7 @@ import {
   LoaderCircle,
   Copy,
   Bot,
-  Sparkles,
-  Send,
-  Smartphone,
-  Network,
-  FileText,
-  UserCheck,
   BellRing,
-  HelpCircle,
-  Play,
-  RotateCcw,
 } from 'lucide-react';
 import { WhatsAppWebJS } from './whatsapp-webjs';
 import { Button } from './ui/button';
@@ -43,16 +34,6 @@ export function StoreConnections({
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [testingTag, setTestingTag] = useState(false);
-
-  // OpenAI testing state
-  const [testMessage, setTestMessage] = useState('Olá! Quanto custa o bolo de morango e como faço para pedir?');
-  const [testReply, setTestReply] = useState<string | null>(null);
-  const [testingAI, setTestingAI] = useState(false);
-
-  // Graphify report state
-  const [graphReport, setGraphReport] = useState<string | null>(null);
-  const [loadingReport, setLoadingReport] = useState(false);
-  const [showReport, setShowReport] = useState(false);
 
   // Notify phones state
   const adminPhones: string[] = settings.adminNotifyPhones?.length
@@ -104,50 +85,6 @@ export function StoreConnections({
     }
   }
 
-  async function runAITest(msg?: string) {
-    const messageToSend = msg || testMessage;
-    if (!messageToSend.trim()) return;
-    setTestingAI(true);
-    setTestReply(null);
-    try {
-      const res = await api('admin/openai/test', {
-        method: 'POST',
-        body: JSON.stringify({ message: messageToSend.trim() }),
-      });
-      if (res.ok && res.reply) {
-        setTestReply(res.reply);
-        toast.success('Resposta da IA gerada!');
-      } else {
-        toast.error('Não foi possível obter resposta.');
-      }
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setTestingAI(false);
-    }
-  }
-
-  async function loadGraphReport() {
-    if (graphReport) {
-      setShowReport(!showReport);
-      return;
-    }
-    setLoadingReport(true);
-    try {
-      const res = await api('admin/graph-report');
-      if (res.ok && res.report) {
-        setGraphReport(res.report);
-        setShowReport(true);
-      } else {
-        toast.error('Relatório Graphify ainda não disponível.');
-      }
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setLoadingReport(false);
-    }
-  }
-
   function addAdminPhone() {
     const clean = newPhoneInput.replace(/\D/g, '');
     if (!/^55\d{10,11}$/.test(clean)) {
@@ -161,7 +98,7 @@ export function StoreConnections({
     const updated = [...adminPhones, clean];
     onChange({ ...settings, adminNotifyPhones: updated });
     setNewPhoneInput('');
-    toast.success('Número adicionado. Clique em Salvar conexões para persistir.');
+    toast.success('Número adicionado. Clique em Salvar conexões para confirmar.');
   }
 
   function removeAdminPhone(phoneToRemove: string) {
@@ -192,14 +129,13 @@ export function StoreConnections({
   const isAIEnabled = inputs.openaiEnabled !== undefined
     ? inputs.openaiEnabled === '1'
     : connections.openaiEnabled;
-  const currentModel = inputs.openaiModel || connections.openaiModel || 'gpt-5-mini';
 
   return (
     <>
       <div className="section-toolbar">
         <div>
-          <h2>Conexões & Inteligência</h2>
-          <p>WhatsApp Web, Atendimento Inteligente com OpenAI, Notificações de Bruna & Gabi e Pagamentos.</p>
+          <h2>Conexões</h2>
+          <p>Cuide do WhatsApp, do atendimento e dos avisos da loja.</p>
         </div>
         <Button onClick={save} disabled={busy}>
           {busy ? <LoaderCircle className="spin" /> : <Check size={17} />}
@@ -211,246 +147,32 @@ export function StoreConnections({
       <WhatsAppWebJS onSaved={onSaved} />
 
       <div className="settings-grid">
-        {/* OpenAI & Assistente Virtual no WhatsApp */}
-        <section className="settings-card" style={{ gridColumn: '1 / -1' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Bot size={22} style={{ color: 'var(--brand-accent, #e11d48)' }} />
-              OpenAI & Atendimento Inteligente no WhatsApp
-            </h3>
-            <span
-              className="connection-pill"
-              style={{
-                backgroundColor: connections.openaiKey && isAIEnabled
-                  ? 'rgba(16, 185, 129, 0.15)'
-                  : connections.openaiKey
-                  ? 'rgba(245, 158, 11, 0.15)'
-                  : 'rgba(156, 163, 175, 0.15)',
-                color: connections.openaiKey && isAIEnabled
-                  ? '#059669'
-                  : connections.openaiKey
-                  ? '#d97706'
-                  : '#6b7280',
-                border: '1px solid currentColor',
-                padding: '4px 10px',
-                borderRadius: '9999px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-              }}
-            >
-              {connections.openaiKey && isAIEnabled
-                ? '🟢 IA Conectada e Ativa'
-                : connections.openaiKey
-                ? '🟡 Chave Salva (Pausada)'
-                : '⚪ Não Configurado'}
-            </span>
+        <section className="settings-card" style={{gridColumn:'1 / -1'}}>
+          <div className="section-toolbar">
+            <h3><Bot size={20}/>Atendimento automático</h3>
+            <span className="connection-pill">{!connections.openaiKey?'Aguardando configuração':isAIEnabled?'Ativado':'Pausado'}</span>
           </div>
-
-          <p style={{ marginTop: '8px', color: 'var(--muted-foreground)' }}>
-            O assistente responde clientes no WhatsApp automaticamente baseado no <strong>catálogo e nas regras atuais da loja</strong>,
-            com preços em tempo real e links diretos dos produtos para compra no site.
-          </p>
-
-          <div className="form-stack" style={{ marginTop: '16px' }}>
-            {/* Chave de API */}
-            {field('openaiKey', 'Chave de API da OpenAI (sk-...)')}
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-              {/* Modelo */}
-              <label className="field">
-                <span style={{ fontWeight: 600 }}>Modelo da OpenAI</span>
-                <Select
-                  value={currentModel}
-                  onValueChange={(v) => setInputs((s) => ({ ...s, openaiModel: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="gpt-5-mini">gpt-5-mini (Padrão · Rápido e ultra econômico)</SelectItem>
-                    <SelectItem value="gpt-5-nano">gpt-5-nano (Ultra leve · Menor custo)</SelectItem>
-                    <SelectItem value="gpt-4o-mini">gpt-4o-mini (Equilibrado e inteligente)</SelectItem>
-                    <SelectItem value="gpt-4o">gpt-4o (Avançado)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <small className="small-muted">Cada teste e resposta utiliza a API da OpenAI. O custo depende do modelo e do tamanho da conversa.</small>
-              </label>
-
-              {/* Status do robô */}
-              <label className="field">
-                <span style={{ fontWeight: 600 }}>Status do Atendimento Automático</span>
-                <Select
-                  value={isAIEnabled ? '1' : '0'}
-                  onValueChange={(v) => setInputs((s) => ({ ...s, openaiEnabled: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Ativado (Responde clientes no WhatsApp)</SelectItem>
-                    <SelectItem value="0">Pausado (Somente atendimento manual)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <small className="small-muted">Se Bruna ou Gabi responderem no WhatsApp, a IA pausa automaticamente por 30 min.</small>
-              </label>
-            </div>
-
-            {/* Prompt customizado */}
+          <p>Ajude seus clientes com dúvidas sobre os doces, preços e como fazer um pedido pelo site.</p>
+          <div className="form-stack">
             <label className="field">
-              <span style={{ fontWeight: 600 }}>Instruções personalizadas para a IA</span>
-              <Textarea
-                placeholder="Exemplo: Bolos decorados requerem 48h de antecedência. Não fazemos entregas aos domingos após 14h. Em caso de dúvidas sobre alergenos (glúten/lactose), avise a equipe."
-                rows={3}
-                value={inputs.openaiPrompt !== undefined ? inputs.openaiPrompt : (connections.openaiPrompt || '')}
-                onChange={(e) => setInputs((s) => ({ ...s, openaiPrompt: e.target.value }))}
-              />
-              <small className="small-muted">Estas regras complementam o mapa estruturado e os produtos da loja.</small>
+              <span>Responder clientes automaticamente</span>
+              <Select value={isAIEnabled?'1':'0'} onValueChange={value=>setInputs(current=>({...current,openaiEnabled:value}))} disabled={!connections.openaiKey}>
+                <SelectTrigger><SelectValue/></SelectTrigger>
+                <SelectContent><SelectItem value="1">Ativado</SelectItem><SelectItem value="0">Pausado</SelectItem></SelectContent>
+              </Select>
+              <small className="small-muted">Quando você ou alguém da equipe responder à conversa, o atendimento automático pausa por 30 minutos.</small>
             </label>
-
-            {/* Simulador de Teste da IA */}
-            <div
-              style={{
-                marginTop: '12px',
-                padding: '16px',
-                backgroundColor: 'var(--surface-sunken, rgba(0,0,0,0.03))',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Sparkles size={16} style={{ color: 'var(--brand-accent, #e11d48)' }} />
-                  Testar Resposta da IA com o Mapa do Site
-                </span>
-                <span style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Simulação em tempo real</span>
-              </div>
-
-              {/* Chips de perguntas rápidas */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTestMessage('Quanto custa o bolo de morango e como faço para pedir?');
-                    void runAITest('Quanto custa o bolo de morango e como faço para pedir?');
-                  }}
-                  style={{
-                    fontSize: '0.8rem',
-                    padding: '4px 10px',
-                    borderRadius: '12px',
-                    border: '1px solid var(--border)',
-                    background: 'var(--background)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  🍰 Preço do bolo e link
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTestMessage('Vocês fazem bolo para festa de aniversário personalizada?');
-                    void runAITest('Vocês fazem bolo para festa de aniversário personalizada?');
-                  }}
-                  style={{
-                    fontSize: '0.8rem',
-                    padding: '4px 10px',
-                    borderRadius: '12px',
-                    border: '1px solid var(--border)',
-                    background: 'var(--background)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  🎂 Encomenda personalizada
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTestMessage('Quero falar com a Bruna ou um atendente humano');
-                    void runAITest('Quero falar com a Bruna ou um atendente humano');
-                  }}
-                  style={{
-                    fontSize: '0.8rem',
-                    padding: '4px 10px',
-                    borderRadius: '12px',
-                    border: '1px solid var(--border)',
-                    background: 'var(--background)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  🙋 Falar com atendente
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  className="input"
-                  style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                  value={testMessage}
-                  onChange={(e) => setTestMessage(e.target.value)}
-                  placeholder="Digite uma mensagem simulada de cliente..."
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      void runAITest();
-                    }
-                  }}
-                />
-                <Button onClick={() => void runAITest()} disabled={testingAI || !connections.openaiKey}>
-                  {testingAI ? <LoaderCircle className="spin size-4" /> : <Send size={15} />}
-                  Testar
-                </Button>
-              </div>
-
-              {testReply && (
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '12px 16px',
-                    backgroundColor: 'var(--background)',
-                    borderRadius: '8px',
-                    borderLeft: '4px solid var(--brand-accent, #e11d48)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                  }}
-                >
-                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--muted-foreground)', marginBottom: '4px' }}>
-                    Resposta gerada pelo assistente (com dados reais e links do site):
-                  </div>
-                  <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.92rem', lineHeight: '1.45' }}>{testReply}</div>
-                </div>
-              )}
-            </div>
-
-            {/* Graphify Architecture Map Viewer */}
-            <div style={{ marginTop: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.9rem', color: 'var(--muted-foreground)' }}>
-                  Relatório técnico do <strong>Graphify</strong> incluído nesta versão. As respostas usam o catálogo e as regras atuais da loja.
-                </span>
-                <Button variant="outline" size="sm" onClick={loadGraphReport} disabled={loadingReport}>
-                  <Network size={15} />
-                  {loadingReport ? 'Carregando...' : showReport ? 'Ocultar Mapa Graphify' : 'Ver Mapa do Sistema Graphify'}
-                </Button>
-              </div>
-
-              {showReport && graphReport && (
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '16px',
-                    backgroundColor: 'var(--surface-sunken)',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    maxHeight: '350px',
-                    overflowY: 'auto',
-                    fontSize: '0.85rem',
-                    fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
-                  }}
-                >
-                  {graphReport}
-                </div>
-              )}
-            </div>
+            {!connections.openaiKey&&<p className="notice">O suporte está preparando este recurso para sua loja.</p>}
+            <details>
+              <summary>Orientações para o atendimento</summary>
+              <label className="field" style={{marginTop:'12px'}}>
+                <span>O que o atendimento precisa saber?</span>
+                <Textarea rows={3} placeholder="Exemplo: encomendas de bolos decorados devem ser feitas com dois dias de antecedência."
+                  value={inputs.openaiPrompt!==undefined?inputs.openaiPrompt:(connections.openaiPrompt||'')}
+                  onChange={event=>setInputs(current=>({...current,openaiPrompt:event.target.value}))}/>
+                <small className="small-muted">Acrescente combinações e cuidados da loja. Os produtos e preços já são consultados no catálogo.</small>
+              </label>
+            </details>
           </div>
         </section>
 
@@ -459,7 +181,7 @@ export function StoreConnections({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <BellRing size={20} style={{ color: '#10b981' }} />
-              Notificações de Pedidos e Pagamentos no WhatsApp
+              Avisos para a equipe
             </h3>
             <span
               className="connection-pill"
@@ -473,7 +195,7 @@ export function StoreConnections({
                 fontWeight: 600,
               }}
             >
-              🔔 2 Telefones Ativos
+              {adminPhones.length} {adminPhones.length===1?'número cadastrado':'números cadastrados'}
             </span>
           </div>
 
@@ -489,7 +211,7 @@ export function StoreConnections({
 
           <details style={{ marginTop: '16px' }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--brand-accent, #e11d48)' }}>
-              Configurar números adicionais de notificação da equipe
+              Alterar quem recebe os avisos
             </summary>
             <div className="form-stack" style={{ marginTop: '12px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
