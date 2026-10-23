@@ -11,8 +11,16 @@ const connectionData=mkdtempSync(path.join(tmpdir(),'cca-connection-test-'));
 process.env.CCA_BRIDGE_DATA_DIR=connectionData;
 const {Connection}=await import('./connection.mjs');
 test.after(()=>rmSync(connectionData,{recursive:true,force:true}));
-import {trackAutomaticMessages,createIncomingHandlers} from './incoming.mjs';
+import {trackAutomaticMessages,createIncomingHandlers,normalizeMessageId} from './incoming.mjs';
 const job={id:'fixture-order-cliente',leaseToken:'a'.repeat(64),phone:'5511999999999',text:'Pedido fictício',resumed:false};
+
+test('current WhatsApp message IDs are restored before the library downloads audio',async()=>{
+ const calls=[],client={sendMessage:async()=>({})},handlers=createIncomingHandlers({getConnection:()=>({client,isReady:()=>true}),request:async(route,data)=>{calls.push(route);return route==='media'?{text:'Quero bolo'}:{reply:'Claro'}}});
+ const message={from:'5511999999999@c.us',hasMedia:true,type:'ptt',body:'',id:{fromMe:false,remote:'5511999999999@c.us',id:'audio-id',$1:'false_5511999999999@c.us_audio-id'},async downloadMedia(){assert.equal(this.id._serialized,this.id.$1);return {mimetype:'audio/ogg',data:'YWJj'}}};
+ await handlers.incoming(message);await handlers.incoming(message);assert.deepEqual(calls,['media','incoming']);
+ assert.equal(normalizeMessageId({id:{fromMe:false,remote:'123@lid',id:'abc'}}),'false_123@lid_abc');
+ assert.equal(normalizeMessageId({id:{}}),null);
+});
 
 test('voice notes without text and reference photos with captions use the media endpoint',async()=>{
  const calls=[],sent=[],client={sendMessage:async(to,text)=>sent.push(text)};

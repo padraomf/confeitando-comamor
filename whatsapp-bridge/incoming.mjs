@@ -1,3 +1,12 @@
+// WhatsApp Web may expose the serialized ID as $1; wwebjs 1.34.7 still reads _serialized.
+export function normalizeMessageId(msg){
+ const id=msg.id;if(!id||typeof id!=='object')return null;
+ if(!id._serialized){
+  if(typeof id.$1==='string'&&id.$1)id._serialized=id.$1;
+  else if(typeof id.fromMe==='boolean'&&typeof id.remote==='string'&&typeof id.id==='string')id._serialized=String(id.fromMe)+'_'+id.remote+'_'+id.id;
+ }
+ return typeof id._serialized==='string'?id._serialized:null;
+}
 // Track all programmatic sends so message_create only hands over human replies.
 export function trackAutomaticMessages(client){
  const pending=new Map();
@@ -36,7 +45,7 @@ export function createIncomingHandlers({request,getConnection}){
   const connection=getConnection();if(!connection.isReady())return;
   automatic(connection.client);
   const person=await contactPhone(msg,msg.from||'');if(!person)return;
-  const id=msg.id?._serialized;
+  const id=normalizeMessageId(msg);
   const now=Date.now();for(const [k,until] of seen)if(until<now)seen.delete(k);
   if(id&&seen.has(id))return;if(id)seen.set(id,now+300000);
   if(seen.size>1000)seen.delete(seen.keys().next().value);
