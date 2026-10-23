@@ -6,7 +6,11 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {deliver} from './delivery.mjs';
 import {journal} from './storage.mjs';
-import {Connection} from './connection.mjs';
+// Connection.stop(true) clears its session directory. Never point lifecycle tests at a real account.
+const connectionData=mkdtempSync(path.join(tmpdir(),'cca-connection-test-'));
+process.env.CCA_BRIDGE_DATA_DIR=connectionData;
+const {Connection}=await import('./connection.mjs');
+test.after(()=>rmSync(connectionData,{recursive:true,force:true}));
 import {trackAutomaticMessages,createIncomingHandlers} from './incoming.mjs';
 const job={id:'fixture-order-cliente',leaseToken:'a'.repeat(64),phone:'5511999999999',text:'Pedido fictício',resumed:false};
 test('automatic responses are not treated as human handovers',async()=>{const client={sendMessage:async()=>({})};const consume=trackAutomaticMessages(client);await client.sendMessage('5511999999999@c.us','Resposta automática');assert.equal(consume({to:'5511999999999@c.us',body:'Resposta automática'}),true);assert.equal(consume({to:'5511999999999@c.us',body:'Resposta humana'}),false)});
