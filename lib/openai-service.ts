@@ -39,7 +39,7 @@ export async function catalogProductOffer(id:string,domain:string){
  const product=(await products() as Product[]).find(p=>p.id===id&&p.active&&!p.demo&&!p.sold_out&&p.stock!==0);
  if(!product)return null;
  const link=domain+productPath(product.id,product.name);
- const reply=`💕 ${product.name} — ${money(product.price)}\n${product.description.slice(0,250)}\n\nPara fazer seu pedido, abra este produto e adicione à sacola:\n${link}\n\nNa sacola você escolhe a quantidade, retirada ou entrega e o pagamento. O pedido fica registrado ao concluir essa etapa. Se precisar, te ajudo por aqui!`;
+ const reply=`*${product.name}* 💕\n*Valor:* ${money(product.price)}\n${product.description.slice(0,250)}\n\nPara fazer seu pedido, abra este produto e adicione à sacola:\n${link}\n\nNa sacola você escolhe a quantidade, retirada ou entrega e o pagamento. O pedido fica registrado ao concluir essa etapa. Se precisar, te ajudo por aqui!`;
  return {reply,action:'catalog_link'};
 }
 
@@ -85,6 +85,7 @@ export async function buildSiteKnowledge(origin: string) {
     : 'Seg a Sáb: 09:00 às 18:00';
 
   return `VOCÊ É O ASSISTENTE VIRTUAL DA CONFEITARIA "${store.name || 'Confeitando com Amor'}".
+FORMATO DAS MENSAGENS: use português simples, parágrafos curtos separados por uma linha em branco e uma pergunta por etapa. Em apresentação de produto/resumo, destaque nome, total e pagamento com *negrito do WhatsApp*. Não escreva blocos longos, IDs técnicos, listas de perguntas ou repita o mesmo dado. Para uma pergunta simples, uma ou duas frases bastam. Use emojis com moderação.
 Seu objetivo é atender clientes no WhatsApp de forma calorosa, ágil, educada e precisa, entendendo primeiro o que cada pessoa deseja e ajudando a resolver seu pedido.
 
 ---

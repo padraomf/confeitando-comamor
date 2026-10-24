@@ -52,7 +52,7 @@ async function prepare(phone:string,sale:Sale,domain:string){
  const inputProfile=profileSchema.safeParse({name,email:paymentOnline?email:profile.email||'',cpf:paymentOnline?cpf:profile.cpf||'',phone:phone.startsWith('55')?phone.slice(2):phone,whatsappConsent:true,...address?{address}:{}});
  if(!inputProfile.success)return {question:'Precisamos conferir seu nome, CPF ou e-mail antes de concluir. Pode me confirmar esses dados?'};
  const total=items.reduce((n,p)=>n+p.quantity*p.price,0)+fee;
- return {items,total,payload:{guest:true,items:sale.items,profile:inputProfile.data,delivery:sale.delivery,payment:sale.payment,quoteId,note:sale.note||''},summary:['Vamos conferir? 💕',...items.map(p=>p.quantity+' × '+p.name+' — '+money(p.quantity*p.price)),sale.delivery==='pickup'?'Retirada na loja':'Entrega · frete '+money(fee),'Pagamento: '+labels[sale.payment],'Total: '+money(total),'Posso confirmar o pedido e enviar o link para pagamento ou acompanhamento?'].join('\n')};
+ return {items,total,payload:{guest:true,items:sale.items,profile:inputProfile.data,delivery:sale.delivery,payment:sale.payment,quoteId,note:sale.note||''},summary:['*Resumo do seu pedido* 💕','',...items.map(p=>p.quantity+' × '+p.name+' — '+money(p.quantity*p.price)),'',sale.delivery==='pickup'?'*Recebimento:* Retirada na loja':'*Recebimento:* Entrega · frete '+money(fee),'*Pagamento:* '+labels[sale.payment],'*Total:* '+money(total),'','Posso confirmar e gerar seu pedido?'].join('\n')};
 }
 export async function saveWhatsAppSale(phone:string,patch:z.infer<typeof salePatchSchema>,domain:string,location?:{lat:number;lng:number}){
  const old=await getWhatsAppSale(phone),previous:Sale=old&&!old.order_id?JSON.parse(old.data):{};
@@ -81,5 +81,5 @@ function orderReply(row:any,domain:string){
  const tracking=domain+'/acompanhar/'+data.trackingToken;
  if(['Cancelado','Não retirado'].includes(row.status))return 'Esse pedido #'+row.code+' está '+row.status.toLowerCase()+'. Confira: '+tracking;
  const link=online&&!paid&&row.checkout_url?row.checkout_url:tracking;
- return `Prontinho! Seu pedido #${row.code} foi criado. 💕\nTotal: ${money(row.total)}\n${paid?'Pagamento confirmado.':online?'Falta concluir o pagamento.':'O pagamento será feito na retirada ou entrega, conforme combinado.'}\n${online&&!paid?'Pague e acompanhe por aqui:':'Acompanhe por aqui:'}\n${link}`;
+ return `*Seu pedido #${row.code} foi criado!* 💕\n\n*Total:* ${money(row.total)}\n${paid?'Pagamento confirmado.':online?'Falta concluir o pagamento.':'O pagamento será feito na retirada ou entrega, conforme combinado.'}\n\n${online&&!paid?'*Pagar e acompanhar:*':'*Acompanhar pedido:*'}\n${link}`;
 }
