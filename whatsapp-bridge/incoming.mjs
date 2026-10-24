@@ -1,11 +1,35 @@
 // WhatsApp Web may expose the serialized ID as $1; wwebjs 1.34.7 still reads _serialized.
 export function normalizeMessageId(msg){
- const id=msg.id;if(!id||typeof id!=='object')return null;
+ const id=msg?.id;if(!id||typeof id!=='object')return null;
  if(!id._serialized){
   if(typeof id.$1==='string'&&id.$1)id._serialized=id.$1;
   else if(typeof id.fromMe==='boolean'&&typeof id.remote==='string'&&typeof id.id==='string')id._serialized=String(id.fromMe)+'_'+id.remote+'_'+id.id;
  }
  return typeof id._serialized==='string'?id._serialized:null;
+}
+
+// Current WA bundles also require the declared MIME type during decryption.
+// Keep the standard library path first, and use this compatibility path only on failure.
+export async function downloadCompatibleMedia(msg,client){
+ const serialized=normalizeMessageId(msg);let originalError;
+ try{const result=await msg.downloadMedia();if(result?.data)return result}catch(error){originalError=error}
+ if(!serialized||!client?.pupPage){if(originalError)throw originalError;return undefined}
+ const result=await client.pupPage.evaluate(async id=>{
+  try{
+   const store=window.require('WAWebCollections').Msg;
+   const raw=store.get(id)||(await store.getMessagesById([id]))?.messages?.[0];
+   if(!raw||!raw.mediaData||raw.mediaData.mediaStage==='REUPLOADING')return null;
+   const qpl={addAnnotations(){return this},addPoint(){return this}};
+   const decrypted=await window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
+    directPath:raw.directPath,encFilehash:raw.encFilehash,filehash:raw.filehash,
+    mediaKey:raw.mediaKey,mediaKeyTimestamp:raw.mediaKeyTimestamp,type:raw.type,
+    mimetype:raw.mimetype,filename:raw.filename,signal:new AbortController().signal,downloadQpl:qpl
+   });
+   return {data:await window.WWebJS.arrayBufferToBase64Async(decrypted),mimetype:raw.mimetype,filesize:raw.size};
+  }catch(error){return {failure:{name:String(error.name||''),message:String(error.message||error),code:String(error.code||'')}}}
+ },serialized);
+ if(result?.failure)throw Error('WhatsApp download: '+JSON.stringify(result.failure));
+ return result||undefined;
 }
 // Track all programmatic sends so message_create only hands over human replies.
 export function trackAutomaticMessages(client){
@@ -16,7 +40,7 @@ export function trackAutomaticMessages(client){
  client.sendMessage=async(to,text,...args)=>{
   prune();const k=key(to,text),entry=pending.get(k)||{count:0,until:0};
   entry.count++;entry.until=Date.now()+60000;pending.set(k,entry);
-  return original(to,text,...args);
+  const sent=await original(to,text,...args);normalizeMessageId(sent);return sent;
  };
  return msg=>{prune();const k=key(msg.to,msg.body),entry=pending.get(k);if(!entry)return false;if(--entry.count<=0)pending.delete(k);return true};
 }
@@ -41,7 +65,7 @@ export function createIncomingHandlers({request,getConnection}){
   return phone&&/^\d{8,15}$/.test(phone)?{phone,name:contact?.pushname||contact?.name||''}:null;
  }
  async function incoming(msg){
-  if(msg.fromMe||(!msg.body&&!msg.hasMedia)||(msg.body||'').length>2000)return;
+  if(msg.fromMe||(!msg.body&&!msg.hasMedia&&msg.type!=='location')||(msg.body||'').length>2000)return;
   const connection=getConnection();if(!connection.isReady())return;
   automatic(connection.client);
   const person=await contactPhone(msg,msg.from||'');if(!person)return;
@@ -51,6 +75,8 @@ export function createIncomingHandlers({request,getConnection}){
   if(seen.size>1000)seen.delete(seen.keys().next().value);
   const task=(queues.get(person.phone)||Promise.resolve()).catch(()=>{}).then(async()=>{
    let text=msg.body||'';
+   const location=msg.type==='location'?{lat:Number(msg.location?.latitude),lng:Number(msg.location?.longitude)}:undefined;
+   if(location)text='Compartilhei minha localização de entrega pelo WhatsApp.';
    if(msg.hasMedia){
     if(msg.isViewOnce||!['ptt','audio','image'].includes(msg.type)){
      await connection.client.sendMessage(msg.from,'Pode enviar uma foto comum ou um áudio? Assim consigo entender sua referência. 😊',{sendSeen:false});return;
@@ -59,7 +85,7 @@ export function createIncomingHandlers({request,getConnection}){
     try{
      let media;
      for(let attempt=0;attempt<3;attempt++){
-      try{media=await msg.downloadMedia()}catch(error){if(attempt===2)throw error}
+      try{media=await downloadCompatibleMedia(msg,connection.client)}catch(error){if(attempt===2)throw error}
       if(media?.data)break;
       if(attempt<2)await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
      }
@@ -77,7 +103,7 @@ export function createIncomingHandlers({request,getConnection}){
      await connection.client.sendMessage(msg.from,hint,{sendSeen:false});return;
     }
    }
-   const res=await request('incoming',{phone:person.phone,text:text.slice(0,6000),senderName:person.name,isFromMe:false});
+   const res=await request('incoming',{phone:person.phone,text:text.slice(0,6000),senderName:person.name,isFromMe:false,...location?{location}:{}});
    if(res?.reply&&connection.isReady())await connection.client.sendMessage(msg.from,res.reply,{sendSeen:false});
   });
   queues.set(person.phone,task);

@@ -11,8 +11,14 @@ const connectionData=mkdtempSync(path.join(tmpdir(),'cca-connection-test-'));
 process.env.CCA_BRIDGE_DATA_DIR=connectionData;
 const {Connection}=await import('./connection.mjs');
 test.after(()=>rmSync(connectionData,{recursive:true,force:true}));
-import {trackAutomaticMessages,createIncomingHandlers,normalizeMessageId} from './incoming.mjs';
+import {trackAutomaticMessages,createIncomingHandlers,normalizeMessageId,downloadCompatibleMedia} from './incoming.mjs';
 const job={id:'fixture-order-cliente',leaseToken:'a'.repeat(64),phone:'5511999999999',text:'Pedido fictício',resumed:false};
+
+test('compatibility download forwards the audio MIME type when the standard method fails',async()=>{
+ const before=globalThis.window,raw={mediaData:{mediaStage:'FETCHING'},mimetype:'audio/ogg; codecs=opus',type:'ptt',directPath:'/fixture',size:3};let parameters;
+ globalThis.window={require:name=>name==='WAWebCollections'?{Msg:{get:id=>id==='fixture-id'?raw:null}}:{downloadManager:{downloadAndMaybeDecrypt:async args=>{parameters=args;return new Uint8Array([1,2,3])}}},WWebJS:{arrayBufferToBase64Async:async()=> 'AQID'}};
+ try{const result=await downloadCompatibleMedia({id:{$1:'fixture-id'},downloadMedia:async()=>{throw Error('t')}},{pupPage:{evaluate:async(fn,id)=>fn(id)}});assert.equal(result.data,'AQID');assert.equal(parameters.mimetype,'audio/ogg; codecs=opus');assert.equal(parameters.type,'ptt')}finally{if(before===undefined)delete globalThis.window;else globalThis.window=before}
+});
 
 test('current WhatsApp message IDs are restored before the library downloads audio',async()=>{
  const calls=[],client={sendMessage:async()=>({})},handlers=createIncomingHandlers({getConnection:()=>({client,isReady:()=>true}),request:async(route,data)=>{calls.push(route);return route==='media'?{text:'Quero bolo'}:{reply:'Claro'}}});

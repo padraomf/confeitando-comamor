@@ -11,11 +11,11 @@ const dir=await mkdtemp(path.join(tmpdir(),'cca-ai-')),sql=new DatabaseSync(':me
 for(const file of (await readdir('drizzle')).filter(x=>x.endsWith('.sql')).sort())sql.exec(await readFile('drizzle/'+file,'utf8'));
 class Statement{
  constructor(q,v=[]){this.q=q;this.v=v}bind(...v){return new Statement(this.q,v)}
- async first(){return sql.prepare(this.q).get(...this.v)||null}async all(){return {results:sql.prepare(this.q).all(...this.v)}}async run(){return sql.prepare(this.q).run(...this.v)}
+ async first(){return sql.prepare(this.q).get(...this.v)||null}async all(){return {results:sql.prepare(this.q).all(...this.v)}}async run(){const r=sql.prepare(this.q).run(...this.v);return {...r,meta:{changes:Number(r.changes)}}}
 }
 const mediaObjects=new Map();
-globalThis.__aiEnv={BUCKET:{put:async(k,v)=>mediaObjects.set(k,v),delete:async k=>mediaObjects.delete(k)},APP_SECRET:'fixture-only',OPENAI_API_KEY:'fixture-only',DB:{prepare:q=>new Statement(q)}};
-await esbuild.build({stdin:{contents:"export * from './lib/openai-service'; export * from './lib/whatsapp-media'; export * from './lib/budget-links'; export {bridgeRoute,queueBudgetWhatsApp} from './lib/whatsapp-bridge'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
+globalThis.__aiEnv={BUCKET:{put:async(k,v)=>mediaObjects.set(k,v),delete:async k=>mediaObjects.delete(k)},APP_SECRET:'fixture-only',OPENAI_API_KEY:'fixture-only',DB:{prepare:q=>new Statement(q),async batch(queries){sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());sql.exec('COMMIT');return results}catch(e){sql.exec('ROLLBACK');throw e}}}};
+await esbuild.build({stdin:{contents:"export * from './lib/openai-service'; export * from './lib/whatsapp-sales'; export * from './lib/whatsapp-media'; export * from './lib/budget-links'; export {bridgeRoute,queueBudgetWhatsApp} from './lib/whatsapp-bridge'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
 const ai=await import(pathToFileURL(path.join(dir,'ai.mjs')).href);
 const fetchOriginal=globalThis.fetch;
 
@@ -160,4 +160,42 @@ test('mobile numbers with and without the ninth digit recognize one existing cus
 test('ambiguous old-format numbers are not assigned to the wrong customer',async()=>{
  for(const id of ['ambiguous-one','ambiguous-two'])sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(id,JSON.stringify({name:'Teste',phone:'7488812345'}),Date.now());
  assert.equal(await ai.findWhatsAppCustomer('5574988812345'),null);
+});
+
+test('a WhatsApp sale uses the real checkout and creates one order only after confirmation',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:false,open:true,hoursMode:'open',pickup:true,storeAddress:'Rua Teste, 20',cash:true,pixKey:'11999999999',pixName:'TESTE',pixCity:'SAO PAULO'}));
+ await ai.saveSecrets({openaiEnabled:'1'});
+ sql.prepare('INSERT INTO products(id,name,description,price,category,image,active,demo,tag,created_at,stock) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('sale-slice','Fatia Brigadeiro','Bolo de chocolate com brigadeiro',1700,'Bolos','/images/brownies.jpg',1,0,'',Date.now(),8);
+ const phone='5511955555555',userId='whatsapp:'+phone;
+ sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(userId,JSON.stringify({name:'Cliente Venda',phone:phone.slice(2),email:'',cpf:''}),Date.now());
+ const first=await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:2}]},'https://local.test');assert.match(first,/retirar.*entrega/);assert.equal(await ai.confirmWhatsAppSale(phone,'sim','https://local.test'),null);
+ assert.match(await ai.saveWhatsAppSale(phone,{delivery:'pickup'},'https://local.test'),/Como deseja pagar/);
+ const summary=await ai.saveWhatsAppSale(phone,{payment:'pix'},'https://local.test');assert.match(summary,/34,00/);assert.match(summary,/Posso confirmar/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=?').get(userId).n,0);
+ const reply=await ai.confirmWhatsAppSale(phone,'sim','https://local.test');assert.match(reply,/Seu pedido #[A-F0-9]+ foi criado/);assert.match(reply,/Falta concluir o pagamento/);assert.match(reply,/\/acompanhar\//);
+ const row=sql.prepare('SELECT * FROM orders WHERE user_id=?').get(userId);assert.equal(row.total,3400);assert.equal(row.payment_status,'Aguardando pagamento');assert.equal(sql.prepare('SELECT stock FROM products WHERE id=?').get('sale-slice').stock,6);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM customer_sessions WHERE actor_id=?').get(userId).n,0);
+ assert.match(await ai.confirmWhatsAppSale(phone,'sim','https://local.test'),/Seu pedido/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=?').get(userId).n,1);assert.equal(sql.prepare('SELECT stock FROM products WHERE id=?').get('sale-slice').stock,6);
+});
+
+test('a price change requires a new summary and confirmation instead of charging the old value',async()=>{
+ const phone='5511944444444';sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Preço',phone:phone.slice(2)}),Date.now());
+ await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:1}],delivery:'pickup',payment:'cash'},'https://local.test');
+ sql.prepare('UPDATE products SET price=1800 WHERE id=?').run('sale-slice');
+ const reply=await ai.confirmWhatsAppSale(phone,'sim','https://local.test');assert.match(reply,/Precisamos revisar/);assert.match(reply,/18,00/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=?').get('whatsapp:'+phone).n,0);
+});
+
+test('delivery waits for a real WhatsApp location and stock shortages cannot produce a summary',async()=>{
+ const phone='5511933333333';sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Entrega',phone:phone.slice(2)}),Date.now());
+ const reply=await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:1}],delivery:'delivery',payment:'cash',address:{cep:'01000000',street:'Rua Teste',number:'20',district:'Centro',city:'São Paulo',state:'SP'}},'https://local.test');assert.match(reply,/compartilhe a localização/);assert.equal((await ai.getWhatsAppSale(phone)).awaiting_confirmation,0);
+ assert.match(await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:30}]},'https://local.test'),/esgotou|quantidade/);assert.equal((await ai.getWhatsAppSale(phone)).awaiting_confirmation,0);
+});
+
+test('delivery uses the same route quote and exact confirmed location as website checkout',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:false,open:true,hoursMode:'open',pickup:true,storeAddress:'Rua Teste, 20',cash:true,lat:-23.55,lng:-46.63,maxKm:15,baseFee:300,perKm:200}));
+ globalThis.fetch=async url=>{assert.match(String(url),/router\.project-osrm\.org\/route/);return Response.json({routes:[{distance:1000}]})};
+ const phone='5511922222222',userId='whatsapp:'+phone;sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(userId,JSON.stringify({name:'Cliente Localização',phone:phone.slice(2)}),Date.now());
+ const location={lat:-23.56,lng:-46.64},summary=await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:1}],delivery:'delivery',payment:'cash',address:{cep:'01000000',street:'Rua Teste',number:'20',district:'Centro',city:'São Paulo',state:'SP'}},'https://local.test',location);
+ assert.match(summary,/frete R\$\s*5,00/);assert.match(summary,/23,00/);
+ assert.match(await ai.confirmWhatsAppSale(phone,'finaliza pra mim','https://local.test'),/Seu pedido/);
+ const row=sql.prepare('SELECT data,total FROM orders WHERE user_id=?').get(userId);assert.equal(row.total,2300);assert.equal(JSON.parse(row.data).fee,500);assert.deepEqual(JSON.parse(row.data).address.location,{...location,source:'pin',confirmed:true});
 });

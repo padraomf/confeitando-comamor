@@ -94,6 +94,7 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
   const input=z.object({
    phone:z.string().regex(/^\d{8,16}$/),
    text:z.string().max(6000),
+   location:z.object({lat:z.number().finite().min(-90).max(90),lng:z.number().finite().min(-180).max(180)}).optional(),
    senderName:z.string().max(100).default(''),
    isFromMe:z.boolean().default(false)
   }).parse(await body());
@@ -105,7 +106,7 @@ export async function bridgeRoute(req:Request,path:string,body:()=>Promise<any>)
    text:input.text,
    senderName:input.senderName,
    isFromMe:input.isFromMe,
-   domain
+   domain,location:input.location
   });
   return json(result);
  }
