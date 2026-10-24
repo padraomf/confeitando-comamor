@@ -112,19 +112,19 @@ test('conversation extracts details and returns the summary without leaking JSON
  const phone='5511333333333';
  sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Teste',phone:'11333333333'}),Date.now());
  globalThis.fetch=async(url,opts)=>{const body=JSON.parse(opts.body);assert.equal(body.response_format.type,'json_object');assert.match(body.messages[0].content,/no máximo UM link/);return Response.json({choices:[{message:{content:JSON.stringify({reply:'Vamos conferir?',draft:fullDraft})}}]})};
- const result=await ai.processIncomingWhatsApp({phone,text:'Quero encomendar um bolo de chocolate de 20 fatias para a festa.',isFromMe:false,domain:'https://local.test'});
+ const result=await ai.processIncomingWhatsApp({phone,text:'Não consegui encomendar pelo site. Quero um bolo de chocolate de 20 fatias para a festa.',isFromMe:false,domain:'https://local.test'});
  assert.match(result.reply,/Posso registrar/);assert.doesNotMatch(result.reply,/"draft"/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,1);
  const confirmed=await ai.processIncomingWhatsApp({phone,text:'Pode registrar',isFromMe:false,domain:'https://local.test'});assert.match(confirmed.reply,/Registrei sua solicitação/);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,2);
 });
 
-test('new contact is asked for a name before any link or registration',async()=>{
+test('a new contact receives the catalog without questions or mandatory registration',async()=>{
  const result=await ai.processIncomingWhatsApp({phone:'5511222222222',text:'Oi! Quero um bolo.',senderName:'Nome de exibição',isFromMe:false,domain:'https://local.test'});
- assert.match(result.reply,/Como você se chama/);assert.doesNotMatch(result.reply,/https?:/);
+ assert.ok(result.reply.includes('/catalogo'));assert.doesNotMatch(result.reply,/\?/);
  assert.equal(await ai.findWhatsAppCustomer('5511222222222'),null);
 });
 test('name capture confirms the actual sending number and never accepts a replacement number',async()=>{
- const phone='5511222222222';globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Prazer!',draft:null,customerName:'Ana Teste'})}}]});
+ const phone='5511222222222';await ai.processIncomingWhatsApp({phone,text:'Não consegui comprar, me ajuda',isFromMe:false,domain:'https://local.test'});globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Prazer!',draft:null,customerName:'Ana Teste'})}}]});
  const result=await ai.processIncomingWhatsApp({phone,text:'Meu nome é Ana Teste',isFromMe:false,domain:'https://local.test'});
  assert.match(result.reply,/Ana/);assert.match(result.reply,/\+55 \(11\) 22222-2222/);
  assert.equal(await ai.findWhatsAppCustomer(phone),null);
@@ -203,8 +203,9 @@ test('delivery uses the same route quote and exact confirmed location as website
 test('a closed store announces custom orders in the first greeting, without repeating on every message',async()=>{
  await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'closed',budgetWhenClosed:true}));await ai.saveSecrets({openaiEnabled:'1'});
  const phone='5511911111122',input={phone,isFromMe:false,domain:'https://local.test'};
- const first=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(first.reply.startsWith('*Loja fechada no momento.*'));assert.match(first.reply,/apenas encomendas/);assert.match(first.reply,/Como você se chama/);
+ const first=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(first.reply.startsWith('*Loja fechada no momento.*'));assert.match(first.reply,/apenas encomendas/);assert.ok(first.reply.includes('/catalogo'));assert.doesNotMatch(first.reply,/\?/);
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Como posso chamar você?',draft:null,customerName:'Ana Teste'})}}]});
+ await ai.processIncomingWhatsApp({...input,text:'Não consegui encomendar, me ajuda'});
  const second=await ai.processIncomingWhatsApp({...input,text:'Ana Teste'});assert.doesNotMatch(second.reply,/Loja fechada no momento/);assert.match(second.reply,/Posso usar este número/);
  sql.prepare('UPDATE whatsapp_chats SET updated_at=? WHERE phone=?').run(Date.now()-5*3600000,phone);
  const nextVisit=await ai.processIncomingWhatsApp({...input,text:'Olá de novo'});assert.ok(nextVisit.reply.startsWith('*Loja fechada no momento.*'));
@@ -237,7 +238,7 @@ test('a fresh greeting does not revive an old slice purchase, and a date advance
  await ai.saveWhatsAppDraft(phone,{cake:true});
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Essa data já passou.',draft:{date:null,cake:null,slices:null}})}}]});
  const year=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date()).slice(0,4);
- const response=await ai.processIncomingWhatsApp({...input,text:'31/12 12h'});assert.match(response.reply,/12, 20 ou 30 fatias/);assert.doesNotMatch(response.reply,/passou|qual data/i);assert.equal(JSON.parse((await ai.getWhatsAppDraft(phone)).draft).date,year+'-12-31T12:00');
+ const response=await ai.processIncomingWhatsApp({...input,text:'Não consegui encomendar pelo site. 31/12 12h'});assert.match(response.reply,/12, 20 ou 30 fatias/);assert.doesNotMatch(response.reply,/passou|qual data/i);assert.equal(JSON.parse((await ai.getWhatsAppDraft(phone)).draft).date,year+'-12-31T12:00');
 });
 
 test('product links come first and assisted checkout starts only after a customer asks for help',async()=>{
