@@ -9,7 +9,7 @@ import {findWhatsAppCustomer} from './whatsapp-customers';
 import {newSession,setSessionCookie,digest} from './customer-auth';
 import {explicitConfirmation} from './whatsapp-budget-flow';
 
-type Sale=z.infer<typeof salePatchSchema>&{location?:{lat:number;lng:number}};
+type Sale=z.infer<typeof salePatchSchema>&{assisted?:boolean;location?:{lat:number;lng:number}};
 export async function getWhatsAppSale(phone:string){return db().prepare('SELECT * FROM whatsapp_sale_drafts WHERE phone=?').bind(phone).first<any>()}
 async function actor(phone:string){return (await findWhatsAppCustomer(phone))?.userId||'whatsapp:'+phone}
 // Reuse the site's checkout, pricing, stock transactions and payment integration.
@@ -54,9 +54,9 @@ async function prepare(phone:string,sale:Sale,domain:string){
  const total=items.reduce((n,p)=>n+p.quantity*p.price,0)+fee;
  return {items,total,payload:{guest:true,items:sale.items,profile:inputProfile.data,delivery:sale.delivery,payment:sale.payment,quoteId,note:sale.note||''},summary:['*Resumo do seu pedido* 💕','',...items.map(p=>p.quantity+' × '+p.name+' — '+money(p.quantity*p.price)),'',sale.delivery==='pickup'?'*Recebimento:* Retirada na loja':'*Recebimento:* Entrega · frete '+money(fee),'*Pagamento:* '+labels[sale.payment],'*Total:* '+money(total),'','Posso confirmar e gerar seu pedido?'].join('\n')};
 }
-export async function saveWhatsAppSale(phone:string,patch:z.infer<typeof salePatchSchema>,domain:string,location?:{lat:number;lng:number}){
+export async function saveWhatsAppSale(phone:string,patch:z.infer<typeof salePatchSchema>,domain:string,location?:{lat:number;lng:number},assisted=false){
  const old=await getWhatsAppSale(phone),previous:Sale=old&&!old.order_id?JSON.parse(old.data):{};
- const sale:Sale={...previous,...patch,...patch.address?{address:{...previous.address,...patch.address}}:{},...location?{location}:{}};
+ const sale:Sale={...previous,...patch,...patch.address?{address:{...previous.address,...patch.address}}:{},...location?{location}:{},...assisted?{assisted:true}:{}};
  const requestId=old&&!old.order_id?old.request_id:crypto.randomUUID();
  const prepared=await prepare(phone,sale,domain);
  await db().prepare('INSERT INTO whatsapp_sale_drafts(phone,request_id,data,expected_total,awaiting_confirmation,order_id,updated_at) VALUES(?,?,?,?,?,NULL,?) ON CONFLICT(phone) DO UPDATE SET request_id=excluded.request_id,data=excluded.data,expected_total=excluded.expected_total,awaiting_confirmation=excluded.awaiting_confirmation,order_id=NULL,updated_at=excluded.updated_at').bind(phone,requestId,JSON.stringify(sale),prepared.total??null,prepared.summary?1:0,Date.now()).run();

@@ -45,8 +45,8 @@ export function trackAutomaticMessages(client){
  return msg=>{prune();const k=key(msg.to,msg.body),entry=pending.get(k);if(!entry)return false;if(--entry.count<=0)pending.delete(k);return true};
 }
 
-export function createIncomingHandlers({request,getConnection}){
- const seen=new Map(),queues=new Map(),trackers=new WeakMap();
+export function createIncomingHandlers({request,getConnection,waitForMessagesMs=1200}){
+ const seen=new Map(),queues=new Map(),trackers=new WeakMap(),pendingTexts=new Map();
  function automatic(client){if(!trackers.has(client))trackers.set(client,trackAutomaticMessages(client));return trackers.get(client)}
  async function contactPhone(msg,chat){
   if(!/@(?:c\.us|lid)$/.test(chat))return null;
@@ -73,8 +73,16 @@ export function createIncomingHandlers({request,getConnection}){
   const now=Date.now();for(const [k,until] of seen)if(until<now)seen.delete(k);
   if(id&&seen.has(id))return;if(id)seen.set(id,now+300000);
   if(seen.size>1000)seen.delete(seen.keys().next().value);
+  let batch=null;
+  if(!msg.hasMedia&&msg.type!=='location'){
+   const existing=pendingTexts.get(person.phone);
+   if(existing){existing.parts.push(msg.body||'');return existing.done.catch(()=>{})}
+   batch={parts:[msg.body||''],done:null};pendingTexts.set(person.phone,batch);
+  }
   const task=(queues.get(person.phone)||Promise.resolve()).catch(()=>{}).then(async()=>{
-   let text=msg.body||'';
+   if(batch&&waitForMessagesMs>0)await new Promise(resolve=>setTimeout(resolve,waitForMessagesMs));
+   if(batch&&pendingTexts.get(person.phone)===batch)pendingTexts.delete(person.phone);
+   let text=batch?batch.parts.join('\n'):msg.body||'';
    const location=msg.type==='location'?{lat:Number(msg.location?.latitude),lng:Number(msg.location?.longitude)}:undefined;
    if(location)text='Compartilhei minha localização de entrega pelo WhatsApp.';
    if(msg.hasMedia){
@@ -106,6 +114,7 @@ export function createIncomingHandlers({request,getConnection}){
    const res=await request('incoming',{phone:person.phone,text:text.slice(0,6000),senderName:person.name,isFromMe:false,...location?{location}:{}});
    if(res?.reply&&connection.isReady())await connection.client.sendMessage(msg.from,res.reply,{sendSeen:false});
   });
+  if(batch)batch.done=task;
   queues.set(person.phone,task);
   try{await task}catch{console.error('Não foi possível processar a mensagem recebida.')}finally{if(queues.get(person.phone)===task)queues.delete(person.phone)}
  }

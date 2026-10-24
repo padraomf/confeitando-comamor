@@ -15,7 +15,7 @@ class Statement{
 }
 const mediaObjects=new Map();
 globalThis.__aiEnv={BUCKET:{put:async(k,v)=>mediaObjects.set(k,v),delete:async k=>mediaObjects.delete(k)},APP_SECRET:'fixture-only',OPENAI_API_KEY:'fixture-only',DB:{prepare:q=>new Statement(q),async batch(queries){sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());sql.exec('COMMIT');return results}catch(e){sql.exec('ROLLBACK');throw e}}}};
-await esbuild.build({stdin:{contents:"export * from './lib/openai-service'; export * from './lib/whatsapp-sales'; export * from './lib/whatsapp-media'; export * from './lib/budget-links'; export {bridgeRoute,queueBudgetWhatsApp} from './lib/whatsapp-bridge'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
+await esbuild.build({stdin:{contents:"export * from './lib/openai-service'; export * from './lib/whatsapp-dates'; export * from './lib/whatsapp-sales'; export * from './lib/whatsapp-media'; export * from './lib/budget-links'; export {bridgeRoute,queueBudgetWhatsApp} from './lib/whatsapp-bridge'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
 const ai=await import(pathToFileURL(path.join(dir,'ai.mjs')).href);
 const fetchOriginal=globalThis.fetch;
 
@@ -209,4 +209,42 @@ test('a closed store announces custom orders in the first greeting, without repe
  sql.prepare('UPDATE whatsapp_chats SET updated_at=? WHERE phone=?').run(Date.now()-5*3600000,phone);
  const nextVisit=await ai.processIncomingWhatsApp({...input,text:'Olá de novo'});assert.ok(nextVisit.reply.startsWith('*Loja fechada no momento.*'));
  const human=await ai.processIncomingWhatsApp({...input,text:'Resposta da loja',isFromMe:true});assert.equal(human.reply,null);
+});
+
+test('Brazilian dates use the current store year and weekdays are resolved without guessing',()=>{
+ const now=Date.parse('2026-10-23T15:00:00Z'),tz='America/Sao_Paulo';
+ assert.equal(ai.resolveWhatsAppDate('próximo domingo',tz,undefined,now).date,'2026-10-25');
+ assert.equal(ai.resolveWhatsAppDate('25/10 12h',tz,undefined,now).date,'2026-10-25T12:00');
+ assert.equal(ai.resolveWhatsAppDate('25/10 12h',tz,undefined,now).past,false);
+ assert.equal(ai.resolveWhatsAppDate('12h',tz,'2026-10-25',now).date,'2026-10-25T12:00');
+ assert.equal(ai.resolveWhatsAppDate('amanhã às 14:30',tz,undefined,now).date,'2026-10-24T14:30');
+ assert.equal(ai.resolveWhatsAppDate('31/02',tz,undefined,now).invalid,true);
+ assert.equal(ai.resolveWhatsAppDate('22/10',tz,undefined,now).past,true);
+});
+
+test('unknown fields cannot erase date, cake choice or size already supplied by the customer',async()=>{
+ const phone='5511900000088';await ai.saveWhatsAppDraft(phone,{cake:true,slices:20,date:'2099-12-20T12:00'});
+ await ai.saveWhatsAppDraft(phone,{cake:null,slices:null,date:null,sweets:false});
+ const data=JSON.parse((await ai.getWhatsAppDraft(phone)).draft);assert.equal(data.date,'2099-12-20T12:00');assert.equal(data.cake,true);assert.equal(data.slices,20);assert.equal(data.sweets,false);
+});
+
+test('a fresh greeting does not revive an old slice purchase, and a date advances the cake conversation',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'closed',budgetWhenClosed:true}));
+ const phone='5511900000077',userId='whatsapp:'+phone,input={phone,isFromMe:false,domain:'https://local.test'};
+ sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(userId,JSON.stringify({name:'Maciel Teste',phone:phone.slice(2)}),Date.now());
+ sql.prepare('INSERT INTO whatsapp_chats(phone,history,handover_until,updated_at) VALUES(?,?,0,?)').run(phone,JSON.stringify([{role:'user',content:'quero fatia brigadeiro'},{role:'assistant',content:'Até mais!'}]),Date.now()-3600000);
+ const greeting=await ai.processIncomingWhatsApp({...input,text:'oi'});assert.doesNotMatch(greeting.reply,/fatia|brigadeiro/i);
+ await ai.saveWhatsAppDraft(phone,{cake:true});
+ globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Essa data já passou.',draft:{date:null,cake:null,slices:null}})}}]});
+ const year=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date()).slice(0,4);
+ const response=await ai.processIncomingWhatsApp({...input,text:'31/12 12h'});assert.match(response.reply,/12, 20 ou 30 fatias/);assert.doesNotMatch(response.reply,/passou|qual data/i);assert.equal(JSON.parse((await ai.getWhatsAppDraft(phone)).draft).date,year+'-12-31T12:00');
+});
+
+test('product links come first and assisted checkout starts only after a customer asks for help',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open',open:true,pickup:true,storeAddress:'Rua Teste, 20',cash:true}));
+ const phone='5511900000066',input={phone,isFromMe:false,domain:'https://local.test'};
+ sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Link',phone:phone.slice(2)}),Date.now());
+ globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Vamos concluir seu pedido.',draft:null,sale:{items:[{id:'sale-slice',quantity:1}],delivery:'pickup',payment:null}})}}]});
+ const first=await ai.processIncomingWhatsApp({...input,text:'quero uma fatia brigadeiro'});assert.equal(first.action,'catalog_link');assert.match(first.reply,/\/produto\//);assert.equal(await ai.getWhatsAppSale(phone),null);
+ const helped=await ai.processIncomingWhatsApp({...input,text:'não consegui comprar pelo link, faz o pedido pra mim'});assert.equal(helped.action,'sale_draft');assert.match(helped.reply,/Como deseja pagar/);assert.equal(JSON.parse((await ai.getWhatsAppSale(phone)).data).assisted,true);
 });
