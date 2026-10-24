@@ -36,7 +36,7 @@ export async function queueBudgetAlertWhatsApp(budget:any){
  const config=await settings();if(!config.whatsappEnabled||config.whatsappMode!=='webjs')return;
  const storePhones:string[]=config.adminNotifyPhones?.length?config.adminNotifyPhones:['5574988218637','5574988546993'];
  const data=typeof budget.data==='string'?JSON.parse(budget.data):budget.data;
- const text=`📝 NOVO PEDIDO DE ORÇAMENTO (#${budget.code})!\n\nCliente: ${data.name}\nWhatsApp: 55${data.phone}\nData do evento: ${data.date||'A combinar'}\nBolo: ${data.cakeFlavor||'Padrão'} (${data.slices||0} fatias)\nDocinhos: ${data.sweetFlavor||'Nenhum'}\n\nAnalise e envie o valor:\n${runtime.PUBLIC_URL||'https://confeitandocomamor.com.br'}/painel/orcamentos#${budget.id}`;
+ const text=`📝 NOVO PEDIDO DE ORÇAMENTO (#${budget.code})!\n\nCliente: ${data.name}\nWhatsApp: 55${data.phone}\nData do evento: ${data.date||'A combinar'}\nBolo: ${data.cakeDough||data.cakeFlavor||'Massa a combinar'} · ${data.cakeFillings?.join(' e ')||'Recheio a combinar'} (${data.slices||0} fatias)\nDocinhos: ${data.sweetFlavor||'Nenhum'}\n\nAnalise e envie o valor:\n${runtime.PUBLIC_URL||'https://confeitandocomamor.com.br'}/painel/orcamentos#${budget.id}`;
  for(const phone of storePhones){
   const clean=phone.replace(/\D/g,'');
   const id=`${budget.id}-loja-${clean}-recebido`;
