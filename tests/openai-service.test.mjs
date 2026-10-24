@@ -296,3 +296,15 @@ test('map links only use explicit coordinates from supported map domains',()=>{
  assert.equal(ai.whatsAppLocationLink('https://maps.google.com/?q=99,999'),undefined);
  assert.equal(ai.whatsAppLocationLink('https://maps.app.goo.gl/short'),undefined);
 });
+
+test('custom order confirmation never adds a closed-store warning even without a recent notice',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'closed',budgetWhenClosed:true,pickup:true}));
+ const phone='5511900000101',userId='whatsapp:'+phone;
+ sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(userId,JSON.stringify({name:'Cliente Encomenda',phone:phone.slice(2)}),Date.now());
+ const summary=await ai.saveWhatsAppDraft(phone,fullDraft);
+ sql.prepare('INSERT INTO whatsapp_chats(phone,history,handover_until,updated_at) VALUES(?,?,0,?)').run(phone,JSON.stringify([{role:'assistant',content:summary}]),Date.now());
+ const result=await ai.processIncomingWhatsApp({phone,text:'pode enviar',isFromMe:false,domain:'https://local.test'});
+ assert.equal(result.action,'budget_confirmation');assert.match(result.reply,/Sua encomenda.*foi enviada/);assert.doesNotMatch(result.reply,/loja fechada|catálogo|apenas encomendas/i);
+ const history=JSON.parse(sql.prepare('SELECT history FROM whatsapp_chats WHERE phone=?').get(phone).history);assert.equal(history.at(-1).content,result.reply);
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets WHERE user_id=?').get(userId).n,1);
+});

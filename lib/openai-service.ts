@@ -204,8 +204,11 @@ export async function processIncomingWhatsApp(input:Parameters<typeof processInc
  await ensureChatsTable();
  const phone=input.phone.replace(/\D/g,'');
  const before=phone?await db().prepare('SELECT history,updated_at FROM whatsapp_chats WHERE phone=?').bind(phone).first<{history:string;updated_at:number}>():null;
+ const customOrder=phone?await getWhatsAppDraft(phone):null;
  const result=await processIncomingWhatsAppCore(input);
  if(!result.reply||input.isFromMe||businessStatus(await settings()).open)return result;
+ // Closing hours restrict the catalog, not the submission of custom orders.
+ if(result.action==='budget_confirmation'||customOrder&&!customOrder.budget_id&&!isWhatsAppGreeting(input.text))return result;
  let noticed=false;try{noticed=!!before&&before.updated_at>Date.now()-4*3600000&&JSON.parse(before.history).some((m:ChatMessage)=>m.role==='assistant'&&m.content.includes(closedNotice))}catch{}
  if(noticed&&!(isWhatsAppGreeting(input.text)&&before&&before.updated_at<Date.now()-30*60000))return result;
  const reply=closedNotice+'\n\n'+result.reply;
