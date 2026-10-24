@@ -105,7 +105,7 @@ export async function nextWhatsAppBudgetQuestion(phone:string){
  if(draft.cake==null&&draft.sweets==null)return 'Você quer bolo, docinhos ou os dois?';
  if(draft.cake&&draft.slices==null)return 'Para quantas pessoas? Temos bolos de 12, 20 ou 30 fatias. 🍰';
  if(draft.cake&&draft.cakeFlavor==null)return store.cakeFlavors.length?'Qual sabor você prefere? '+store.cakeFlavors.join(', ')+'.':'Que sabor você quer?';
- 
+
  if(draft.sweets&&draft.quantity==null)return 'Quantos docinhos você gostaria? Trabalhamos a partir de 100 unidades.';
  if(!draft.description)return 'Qual é o tema ou a decoração que você imagina?';
  if(!draft.delivery)return 'Você vai retirar ou é pra entregar?';
