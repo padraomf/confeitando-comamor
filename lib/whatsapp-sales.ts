@@ -24,7 +24,7 @@ async function checkoutRequest(phone:string,domain:string,path:string,payload:un
 }
 async function prepare(phone:string,sale:Sale,domain:string){
  const store=await settings(),s=await secrets();
- if(!businessStatus(store).open)return {question:'Qual é a data e o que você imagina para sua encomenda? 💕'};
+ if(!businessStatus(store).open)return {question:'O catálogo está fechado. Fatias e sobremesas só são vendidas com a loja aberta. Para encomendar bolo ou docinhos para outra data: '+domain+'/encomendas'};
  if(!sale.items?.length)return {question:'Qual doce você quer e quantas unidades? 😊'};
  const catalog=await products() as Product[],items=[];
  for(const item of sale.items){const p=catalog.find(p=>p.id===item.id&&p.active&&!p.demo&&!p.sold_out&&p.stock!==0);if(!p||p.stock!=null&&p.stock<item.quantity)return {question:'Uma das opções esgotou ou não tem essa quantidade. Vamos escolher outra?'};items.push({...item,name:p.name,price:p.price})}
@@ -33,6 +33,8 @@ async function prepare(phone:string,sale:Sale,domain:string){
  const online=paymentReady(s,store.paymentProvider);
  const labels={pix:'Pix',card:'Cartão online',cash:'Dinheiro',card_machine:'Cartão na retirada'};
  const available=(Object.keys(labels) as (keyof typeof labels)[]).filter(p=>paymentAllowed(store,sale.delivery!,p,online));
+ if(sale.delivery==='delivery'&&!sale.location)return {question:'Manda a localização da entrega pelo WhatsApp (clipe → Localização). Depois me passa o endereço.'};
+ if(sale.delivery==='delivery'&&!addressSchema.safeParse(sale.address).success)return {question:'Agora me manda CEP, rua, número, bairro, cidade e estado, como complemento para o entregador.'};
  if(!sale.payment||!available.includes(sale.payment))return {question:'Como deseja pagar? '+available.map(p=>labels[p]).join(', ')+'.'};
  const row=await db().prepare('SELECT data FROM profiles WHERE user_id=?').bind(await actor(phone)).first<any>(),profile=row?JSON.parse(row.data):{};
  const customer=await findWhatsAppCustomer(phone);

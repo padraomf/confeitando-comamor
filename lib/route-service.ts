@@ -26,7 +26,7 @@ export async function reverseAddress(lat:number,lng:number){
   };
 }
 
-export async function routeQuote(a:Address){
+export async function routeQuote(a:Pick<Address,'location'>){
   const config=await settings();
   if(config.lat===null||config.lng===null)throw new HttpError(422,'A localização da confeitaria ainda não foi configurada.');
   if(!a.location?.confirmed)throw new HttpError(422,'Confirme o ponto de entrega.');

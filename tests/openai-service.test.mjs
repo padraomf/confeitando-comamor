@@ -15,7 +15,7 @@ class Statement{
 }
 const mediaObjects=new Map();
 globalThis.__aiEnv={BUCKET:{put:async(k,v)=>mediaObjects.set(k,v),delete:async k=>mediaObjects.delete(k)},APP_SECRET:'fixture-only',OPENAI_API_KEY:'fixture-only',DB:{prepare:q=>new Statement(q),async batch(queries){sql.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());sql.exec('COMMIT');return results}catch(e){sql.exec('ROLLBACK');throw e}}}};
-await esbuild.build({stdin:{contents:"export * from './lib/openai-service'; export * from './lib/whatsapp-dates'; export * from './lib/whatsapp-sales'; export * from './lib/whatsapp-media'; export * from './lib/budget-links'; export {bridgeRoute,queueBudgetWhatsApp} from './lib/whatsapp-bridge'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
+await esbuild.build({stdin:{contents:"export * from './lib/whatsapp-location'; export * from './lib/openai-service'; export * from './lib/whatsapp-dates'; export * from './lib/whatsapp-sales'; export * from './lib/whatsapp-media'; export * from './lib/budget-links'; export {bridgeRoute,queueBudgetWhatsApp} from './lib/whatsapp-bridge'; export * from './lib/whatsapp-budget-flow'; export * from './lib/whatsapp-customers'; export {putSetting,saveSecrets} from './lib/server';",resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:path.join(dir,'ai.mjs'),logLevel:'silent',plugins:[{name:'fixtures',setup(b){b.onResolve({filter:/^cloudflare:workers$/},()=>({path:'env',namespace:'fixture'}));b.onResolve({filter:/chatgpt-auth$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='env'?'export const env=globalThis.__aiEnv':'export async function getChatGPTUser(){return null}',loader:'js'}))}}]});
 const ai=await import(pathToFileURL(path.join(dir,'ai.mjs')).href);
 const fetchOriginal=globalThis.fetch;
 
@@ -119,6 +119,7 @@ test('conversation extracts details and returns the summary without leaking JSON
 });
 
 test('a new contact receives the catalog without questions or mandatory registration',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open'}));
  const result=await ai.processIncomingWhatsApp({phone:'5511222222222',text:'Oi! Quero um bolo.',senderName:'Nome de exibição',isFromMe:false,domain:'https://local.test'});
  assert.ok(result.reply.includes('/catalogo'));assert.doesNotMatch(result.reply,/\?/);
  assert.equal(await ai.findWhatsAppCustomer('5511222222222'),null);
@@ -186,7 +187,7 @@ test('a price change requires a new summary and confirmation instead of charging
 
 test('delivery waits for a real WhatsApp location and stock shortages cannot produce a summary',async()=>{
  const phone='5511933333333';sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Entrega',phone:phone.slice(2)}),Date.now());
- const reply=await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:1}],delivery:'delivery',payment:'cash',address:{cep:'01000000',street:'Rua Teste',number:'20',district:'Centro',city:'São Paulo',state:'SP'}},'https://local.test');assert.match(reply,/compartilhe a localização/);assert.equal((await ai.getWhatsAppSale(phone)).awaiting_confirmation,0);
+ const reply=await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:1}],delivery:'delivery',payment:'cash',address:{cep:'01000000',street:'Rua Teste',number:'20',district:'Centro',city:'São Paulo',state:'SP'}},'https://local.test');assert.match(reply,/[Mm]anda a localização/);assert.equal((await ai.getWhatsAppSale(phone)).awaiting_confirmation,0);
  assert.match(await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:30}]},'https://local.test'),/esgotou|quantidade/);assert.equal((await ai.getWhatsAppSale(phone)).awaiting_confirmation,0);
 });
 
@@ -203,7 +204,7 @@ test('delivery uses the same route quote and exact confirmed location as website
 test('a closed store announces custom orders in the first greeting, without repeating on every message',async()=>{
  await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'closed',budgetWhenClosed:true}));await ai.saveSecrets({openaiEnabled:'1'});
  const phone='5511911111122',input={phone,isFromMe:false,domain:'https://local.test'};
- const first=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(first.reply.startsWith('*Loja fechada no momento.*'));assert.match(first.reply,/apenas encomendas/);assert.ok(first.reply.includes('/catalogo'));assert.doesNotMatch(first.reply,/\?/);
+ const first=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(first.reply.startsWith('*Loja fechada no momento.*'));assert.match(first.reply,/apenas encomendas/);assert.ok(first.reply.includes('/encomendas'));assert.ok(!first.reply.includes('/catalogo'));assert.doesNotMatch(first.reply,/\?/);
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Como posso chamar você?',draft:null,customerName:'Ana Teste'})}}]});
  await ai.processIncomingWhatsApp({...input,text:'Não consegui encomendar, me ajuda'});
  const second=await ai.processIncomingWhatsApp({...input,text:'Ana Teste'});assert.doesNotMatch(second.reply,/Loja fechada no momento/);assert.match(second.reply,/Posso usar este número/);
@@ -234,7 +235,7 @@ test('a fresh greeting does not revive an old slice purchase, and a date advance
  const phone='5511900000077',userId='whatsapp:'+phone,input={phone,isFromMe:false,domain:'https://local.test'};
  sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(userId,JSON.stringify({name:'Maciel Teste',phone:phone.slice(2)}),Date.now());
  sql.prepare('INSERT INTO whatsapp_chats(phone,history,handover_until,updated_at) VALUES(?,?,0,?)').run(phone,JSON.stringify([{role:'user',content:'quero fatia brigadeiro'},{role:'assistant',content:'Até mais!'}]),Date.now()-3600000);
- const greeting=await ai.processIncomingWhatsApp({...input,text:'oi'});assert.doesNotMatch(greeting.reply,/fatia|brigadeiro/i);
+ const greeting=await ai.processIncomingWhatsApp({...input,text:'oi'});assert.doesNotMatch(greeting.reply,/sua fatia|seu pedido.*brigadeiro/i);
  await ai.saveWhatsAppDraft(phone,{cake:true});
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Essa data já passou.',draft:{date:null,cake:null,slices:null}})}}]});
  const year=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date()).slice(0,4);
@@ -267,4 +268,31 @@ test('the photo refusal flows to one optional question and then the confirmation
 
 test('WhatsApp messages turn escaped newlines into real paragraph breaks',()=>{
  assert.equal(ai.conciseWhatsAppReply(String.raw`Oi!\n\nTudo bem?`),'Oi!\n\nTudo bem?');
+});
+
+ test('custom delivery keeps the customer pin and quotes delivery separately from cake pricing',async()=>{
+ await ai.putSetting('store',JSON.stringify({hoursMode:'closed',budgetWhenClosed:true,pickup:true,lat:-23.55,lng:-46.63,maxKm:15,baseFee:300,perKm:200}));
+ globalThis.fetch=async url=>{assert.match(String(url),/router.project-osrm.org/);assert.ok(String(url).includes('-46.64,-23.56'));return Response.json({routes:[{distance:1000}]})};
+ const phone='5511900000099',location={lat:-23.56,lng:-46.64};
+ assert.equal(await ai.saveWhatsAppDraft(phone,{...fullDraft,delivery:'delivery'}),null);
+ assert.match(await ai.nextWhatsAppBudgetQuestion(phone),/localização/);
+ await ai.saveWhatsAppDraft(phone,{},location);assert.match(await ai.nextWhatsAppBudgetQuestion(phone),/endereço/);
+ const summary=await ai.saveWhatsAppDraft(phone,{address:{cep:'01000000',street:'Rua Teste',number:'20',district:'Centro',city:'São Paulo',state:'SP'}});
+ assert.match(summary,/Taxa de entrega: R\$\s*5,00/);assert.match(summary,/analisar/);
+ await ai.confirmWhatsAppBudget(phone,'sim');const row=sql.prepare('SELECT data FROM budgets WHERE user_id=?').get('whatsapp:'+phone),data=JSON.parse(row.data);
+ assert.deepEqual(data.address.location,{...location,source:'pin',confirmed:true});assert.equal(data.deliveryQuote.fee,500);
+ });
+
+test('closed catalog never schedules slices and open catalog does not accept future dates',async()=>{
+ const input={phone:'5511900000100',isFromMe:false,domain:'https://local.test'};
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'closed',budgetWhenClosed:true}));
+ const closed=await ai.processIncomingWhatsApp({...input,text:'quero uma fatia amanhã'});assert.equal(closed.action,'catalog_closed');assert.match(closed.reply,/encomendas/);assert.equal(await ai.getWhatsAppDraft(input.phone),null);
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open'}));
+ const future=await ai.processIncomingWhatsApp({...input,text:'quero uma sobremesa amanhã'});assert.equal(future.action,'catalog_not_scheduled');assert.equal(await ai.getWhatsAppDraft(input.phone),null);
+});
+test('map links only use explicit coordinates from supported map domains',()=>{
+ assert.deepEqual(ai.whatsAppLocationLink('https://maps.google.com/?q=-23.56,-46.64'),{lat:-23.56,lng:-46.64});
+ assert.equal(ai.whatsAppLocationLink('https://example.com/?q=-23.56,-46.64'),undefined);
+ assert.equal(ai.whatsAppLocationLink('https://maps.google.com/?q=99,999'),undefined);
+ assert.equal(ai.whatsAppLocationLink('https://maps.app.goo.gl/short'),undefined);
 });
