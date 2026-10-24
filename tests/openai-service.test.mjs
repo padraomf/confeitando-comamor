@@ -37,9 +37,9 @@ test('reference photos are private, described visually and attached to the confi
  const phone='5511900000022',bytes=new Uint8Array(24);bytes.set([137,80,78,71,13,10,26,10]);
  await ai.receiveWhatsAppMedia(mediaRequest(phone,'image','fixture-photo','image/png',bytes));
  const refs=await ai.pendingReferences(phone);assert.equal(refs.length,1);assert.equal((await ai.pendingReferences('5511900000033')).length,0);assert.equal(mediaObjects.size,1);
- const draft={...fullDraft,name:'Teste Foto',referenceDeclined:false};assert.match(await ai.saveWhatsAppDraft(phone,draft),/Fotos de referência: 1/);
+ const draft={...fullDraft,name:'Teste Foto',description:null,referenceDeclined:false};assert.match(await ai.saveWhatsAppDraft(phone,draft),/Fotos de referência: 1/);
  const reply=await ai.confirmWhatsAppBudget(phone,'sim');assert.match(reply,/encomenda/);const row=sql.prepare('SELECT * FROM budgets WHERE user_id=?').get('whatsapp:'+phone);
- assert.deepEqual(JSON.parse(row.data).photos,[refs[0].id]);assert.equal(sql.prepare('SELECT budget_id FROM budget_attachments WHERE id=?').get(refs[0].id).budget_id,row.id);assert.equal((await ai.pendingReferences(phone)).length,0);
+ assert.equal(JSON.parse(row.data).description,'Referência enviada em imagem');assert.deepEqual(JSON.parse(row.data).photos,[refs[0].id]);assert.equal(sql.prepare('SELECT budget_id FROM budget_attachments WHERE id=?').get(refs[0].id).budget_id,row.id);assert.equal((await ai.pendingReferences(phone)).length,0);
  const link=new URL(await ai.budgetCustomerLink(row.id));assert.equal((await ai.linkedBudget(row.id,link.searchParams.get('access'))).id,row.id);
  await assert.rejects(ai.linkedBudget(crypto.randomUUID(),link.searchParams.get('access')),e=>e.status===404);await assert.rejects(ai.linkedBudget(row.id,'f'.repeat(64)),e=>e.status===404);
  // This fixture is independent of the original conversation's budget count assertions.
@@ -83,7 +83,7 @@ test('answers contain at most one buying link and never the custom-order form',(
  assert.equal((reply.match(/https:\/\//g)||[]).length,1);assert.doesNotMatch(reply,/encomendas/);
 });
 const draftPhone='5511777777777';
-const fullDraft={extrasConfirmed:true,referenceDeclined:true,name:'Cliente Teste',date:'2099-12-20T15:00',cake:true,slices:20,sweets:false,cakeFlavor:'Chocolate',description:'Tema jardim com flores coloridas',delivery:'pickup'};
+const fullDraft={cakeDough:'Preta de chocolate',cakeFillings:['Brigadeiro'],extrasConfirmed:true,referenceDeclined:true,name:'Cliente Teste',date:'2099-12-20T15:00',cake:true,slices:20,sweets:false,cakeFlavor:'Chocolate',description:'Tema jardim com flores coloridas',delivery:'pickup'};
 test('a partial custom order does not create a request or ask for confirmation',async()=>{
  assert.equal(await ai.saveWhatsAppDraft(draftPhone,{cake:true,date:'2099-12-20T15:00'}),null);
  assert.equal((await ai.getWhatsAppDraft(draftPhone)).awaiting_confirmation,0);
@@ -104,7 +104,7 @@ test('explicit confirmation registers one request and retry cannot duplicate it'
 });
 test('past dates, missing flavors and missing delivery addresses cannot be finalized',async()=>{
  assert.equal(await ai.saveWhatsAppDraft('5511666666666',{...fullDraft,date:'2020-01-01T12:00'}),null);
- assert.equal(await ai.saveWhatsAppDraft('5511555555555',{...fullDraft,cakeFlavor:null}),null);
+ assert.equal(await ai.saveWhatsAppDraft('5511555555555',{...fullDraft,cakeDough:null}),null);
  assert.equal(await ai.saveWhatsAppDraft('5511444444444',{...fullDraft,delivery:'delivery',address:{city:'Juazeiro',state:'BA'}}),null);
  assert.equal(await ai.confirmWhatsAppBudget('5511444444444','sim'),null);
 });
@@ -307,4 +307,15 @@ test('custom order confirmation never adds a closed-store warning even without a
  assert.equal(result.action,'budget_confirmation');assert.match(result.reply,/Sua encomenda.*foi enviada/);assert.doesNotMatch(result.reply,/loja fechada|catálogo|apenas encomendas/i);
  const history=JSON.parse(sql.prepare('SELECT history FROM whatsapp_chats WHERE phone=?').get(phone).history);assert.equal(history.at(-1).content,result.reply);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets WHERE user_id=?').get(userId).n,1);
+});
+
+test('cake orders ask dough before fillings, preserve both, and reject more than two fillings',async()=>{
+ const phone='5511900000102';await ai.saveWhatsAppDraft(phone,{...fullDraft,cakeDough:null,cakeFillings:null});
+ assert.match(await ai.nextWhatsAppBudgetQuestion(phone),/Qual massa/);
+ assert.equal(await ai.saveWhatsAppDraft(phone,{cakeDough:'Branca tradicional'}),null);
+ const question=await ai.nextWhatsAppBudgetQuestion(phone);assert.match(question,/até 2 recheios/);for(const flavor of ai.cakeFillings)assert.ok(question.includes(flavor));
+ const summary=await ai.saveWhatsAppDraft(phone,{cakeFillings:['Brigadeiro com amendoim','Leite ninho']});assert.match(summary,/Massa: Branca tradicional/);assert.match(summary,/Recheio: Brigadeiro com amendoim e Leite ninho/);
+ assert.equal(ai.conversationAnswer.safeParse({reply:'ok',draft:{cakeFillings:['Brigadeiro','Beijinho','Creme moça']}}).success,false);
+ assert.equal(ai.conversationAnswer.safeParse({reply:'ok',draft:{cakeFillings:['Brigadeiro','Brigadeiro']}}).success,false);
+ await ai.confirmWhatsAppBudget(phone,'sim');const data=JSON.parse(sql.prepare('SELECT data FROM budgets WHERE user_id=?').get('whatsapp:'+phone).data);assert.equal(data.cakeDough,'Branca tradicional');assert.deepEqual(data.cakeFillings,['Brigadeiro com amendoim','Leite ninho']);
 });
