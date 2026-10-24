@@ -24,7 +24,7 @@ async function checkoutRequest(phone:string,domain:string,path:string,payload:un
 }
 async function prepare(phone:string,sale:Sale,domain:string){
  const store=await settings(),s=await secrets();
- if(!businessStatus(store).open)return {question:'A loja não está recebendo pedidos agora. Posso te ajudar a escolher para quando abrirmos? 💕'};
+ if(!businessStatus(store).open)return {question:'Qual é a data e o que você imagina para sua encomenda? 💕'};
  if(!sale.items?.length)return {question:'Qual doce você quer e quantas unidades? 😊'};
  const catalog=await products() as Product[],items=[];
  for(const item of sale.items){const p=catalog.find(p=>p.id===item.id&&p.active&&!p.demo&&!p.sold_out&&p.stock!==0);if(!p||p.stock!=null&&p.stock<item.quantity)return {question:'Uma das opções esgotou ou não tem essa quantidade. Vamos escolher outra?'};items.push({...item,name:p.name,price:p.price})}

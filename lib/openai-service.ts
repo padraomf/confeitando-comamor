@@ -85,7 +85,7 @@ export async function buildSiteKnowledge(origin: string) {
     : 'Seg a Sáb: 09:00 às 18:00';
 
   return `VOCÊ É O ASSISTENTE VIRTUAL DA CONFEITARIA "${store.name || 'Confeitando com Amor'}".
-FORMATO DAS MENSAGENS: use português simples, parágrafos curtos separados por uma linha em branco e uma pergunta por etapa. Em apresentação de produto/resumo, destaque nome, total e pagamento com *negrito do WhatsApp*. Não escreva blocos longos, IDs técnicos, listas de perguntas ou repita o mesmo dado. Para uma pergunta simples, uma ou duas frases bastam. Use emojis com moderação.
+FORMATO DAS MENSAGENS: use português simples e pouco texto: em respostas comuns, até 2 frases curtas (tente até 250 caracteres), uma pergunta por etapa e uma linha em branco entre ideias. Evite apresentações longas, justificativas e repetir o que o cliente acabou de dizer. Em resumos, liste apenas os itens e dados essenciais; mantenha valores e links completos. Em apresentação de produto/resumo, destaque nome, total e pagamento com *negrito do WhatsApp*. Não escreva blocos longos, IDs técnicos, listas de perguntas ou repita o mesmo dado. Para uma pergunta simples, uma ou duas frases bastam. Use emojis com moderação.
 Seu objetivo é atender clientes no WhatsApp de forma calorosa, ágil, educada e precisa, entendendo primeiro o que cada pessoa deseja e ajudando a resolver seu pedido.
 
 ---
@@ -109,6 +109,7 @@ ${store.sweetFlavors?.length ? `SABORES DE DOCINHOS: ${store.sweetFlavors.join('
 ---
 FUNCIONAMENTO & REGRAS DA LOJA:
 - Situação atual: ${status.label} (${status.detail})
+${!status.open?'IMPORTANTE: a loja está fechada. Atenda somente encomendas personalizadas para datas futuras. Não ofereça compra imediata de fatias, retirada hoje, preparo agora ou link de pagamento de produto pronto. Avise isso logo na abertura; se o aviso já aparecer no histórico, não o repita. Pergunte sobre a encomenda, ocasião ou data, uma pergunta por vez.':''}
 - Horários de atendimento: ${hoursSummary}
 - Tempo estimado de preparo: ${store.prepMin} a ${store.prepMax} minutos
 - Endereço da loja para retirada: ${store.storeAddress || 'Consulte no site'}
@@ -195,7 +196,21 @@ export async function callOpenAI({
 /**
  * Processa mensagens recebidas pelo WhatsApp Bridge
  */
-export async function processIncomingWhatsApp({
+const closedNotice='*Loja fechada no momento.* 🌙\nEstamos recebendo apenas encomendas para outras datas.';
+export async function processIncomingWhatsApp(input:Parameters<typeof processIncomingWhatsAppCore>[0]){
+ await ensureChatsTable();
+ const phone=input.phone.replace(/\D/g,'');
+ const before=phone?await db().prepare('SELECT history,updated_at FROM whatsapp_chats WHERE phone=?').bind(phone).first<{history:string;updated_at:number}>():null;
+ const result=await processIncomingWhatsAppCore(input);
+ if(!result.reply||input.isFromMe||businessStatus(await settings()).open)return result;
+ let noticed=false;try{noticed=!!before&&before.updated_at>Date.now()-4*3600000&&JSON.parse(before.history).some((m:ChatMessage)=>m.role==='assistant'&&m.content.includes(closedNotice))}catch{}
+ if(noticed)return result;
+ const reply=closedNotice+'\n\n'+result.reply;
+ const current=await db().prepare('SELECT history FROM whatsapp_chats WHERE phone=?').bind(phone).first<{history:string}>();
+ if(current){try{const history:ChatMessage[]=JSON.parse(current.history),last=history.at(-1);if(last?.role==='assistant'&&last.content===result.reply){last.content=reply;await db().prepare('UPDATE whatsapp_chats SET history=? WHERE phone=? AND history=?').bind(JSON.stringify(history),phone,current.history).run()}}catch{}}
+ return {...result,reply};
+}
+async function processIncomingWhatsAppCore({
   phone,
   text,
   senderName,
@@ -267,7 +282,7 @@ export async function processIncomingWhatsApp({
     await notifyAdminsHumanRequest(cleanPhone, senderName || 'Cliente', text);
 
     return {
-      reply: 'Entendido! 🌸 Já avisei a Bruna e a Gabi. Uma de nós irá te responder pessoalmente aqui em instantes!',
+      reply: businessStatus(config).open?'Já avisei a Bruna e a Gabi. 🌸 Aguarde o atendimento por aqui.':'Já avisei a Bruna e a Gabi. 🌸 Elas responderão assim que estiverem disponíveis.',
       action: 'transferred_to_human',
     };
   }
@@ -345,6 +360,7 @@ export async function processIncomingWhatsApp({
       await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'sale_draft'};
     }
     if(answer.productId&&!answer.draft){
+      if(!businessStatus(config).open){reply='Para uma encomenda, qual data você tem em mente?';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'store_closed'}}
       const offer=await catalogProductOffer(answer.productId,domain);
       if(offer){await saveConversationHistory(cleanPhone,history,text,offer.reply);return offer}
       reply='Essa opção não está disponível agora. Posso te ajudar a escolher outra do nosso catálogo? 💕';

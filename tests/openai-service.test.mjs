@@ -199,3 +199,14 @@ test('delivery uses the same route quote and exact confirmed location as website
  assert.match(await ai.confirmWhatsAppSale(phone,'finaliza pra mim','https://local.test'),/Seu pedido/);
  const row=sql.prepare('SELECT data,total FROM orders WHERE user_id=?').get(userId);assert.equal(row.total,2300);assert.equal(JSON.parse(row.data).fee,500);assert.deepEqual(JSON.parse(row.data).address.location,{...location,source:'pin',confirmed:true});
 });
+
+test('a closed store announces custom orders in the first greeting, without repeating on every message',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'closed',budgetWhenClosed:true}));await ai.saveSecrets({openaiEnabled:'1'});
+ const phone='5511911111122',input={phone,isFromMe:false,domain:'https://local.test'};
+ const first=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(first.reply.startsWith('*Loja fechada no momento.*'));assert.match(first.reply,/apenas encomendas/);assert.match(first.reply,/Como você se chama/);
+ globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Como posso chamar você?',draft:null,customerName:'Ana Teste'})}}]});
+ const second=await ai.processIncomingWhatsApp({...input,text:'Ana Teste'});assert.doesNotMatch(second.reply,/Loja fechada no momento/);assert.match(second.reply,/Posso usar este número/);
+ sql.prepare('UPDATE whatsapp_chats SET updated_at=? WHERE phone=?').run(Date.now()-5*3600000,phone);
+ const nextVisit=await ai.processIncomingWhatsApp({...input,text:'Olá de novo'});assert.ok(nextVisit.reply.startsWith('*Loja fechada no momento.*'));
+ const human=await ai.processIncomingWhatsApp({...input,text:'Resposta da loja',isFromMe:true});assert.equal(human.reply,null);
+});
