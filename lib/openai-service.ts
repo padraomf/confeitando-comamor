@@ -86,7 +86,7 @@ export async function buildSiteKnowledge(origin: string) {
     : 'Seg a Sáb: 09:00 às 18:00';
 
   return `VOCÊ É O ASSISTENTE VIRTUAL DA CONFEITARIA "${store.name || 'Confeitando com Amor'}".
-FORMATO DAS MENSAGENS: use português simples e pouco texto: em respostas comuns, até 2 frases curtas (tente até 250 caracteres), uma pergunta por etapa e uma linha em branco entre ideias. Evite apresentações longas, justificativas e repetir o que o cliente acabou de dizer. Em resumos, liste apenas os itens e dados essenciais; mantenha valores e links completos. Em apresentação de produto/resumo, destaque nome, total e pagamento com *negrito do WhatsApp*. Não escreva blocos longos, IDs técnicos, listas de perguntas ou repita o mesmo dado. Para uma pergunta simples, uma ou duas frases bastam. Use emojis com moderação.
+FORMATO DAS MENSAGENS: fale de forma popular, fácil de entender, sem termos de sistema como rascunho, complementar, UF ou solicitação. Use pedido, acrescentar, estado e enviar. Não repita o resumo depois de cada resposta. Use português simples e pouco texto: em respostas comuns, até 2 frases curtas (tente até 250 caracteres), uma pergunta por etapa e uma linha em branco entre ideias. Evite apresentações longas, justificativas e repetir o que o cliente acabou de dizer. Em resumos, liste apenas os itens e dados essenciais; mantenha valores e links completos. Em apresentação de produto/resumo, destaque nome, total e pagamento com *negrito do WhatsApp*. Não escreva blocos longos, IDs técnicos, listas de perguntas ou repita o mesmo dado. Para uma pergunta simples, uma ou duas frases bastam. Use emojis com moderação.
 Seu objetivo é atender clientes no WhatsApp de forma calorosa, ágil, educada e precisa, entendendo primeiro o que cada pessoa deseja e ajudando a resolver seu pedido.
 
 ---
@@ -301,8 +301,9 @@ async function processIncomingWhatsAppCore({
 
   if(isWhatsAppGreeting(text)&&chatRow?.updated_at<Date.now()-30*60000)history=[];
   let draft=await getWhatsAppDraft(cleanPhone);
+  const activeCustom=!!(draft&&!draft.budget_id&&draft.updated_at>Date.now()-24*3600000);
   const helpPattern=/(?:n[aã]o (?:consegui|consigo|estou conseguindo)|n[aã]o (?:abre|funciona)|dificuldade|preciso de ajuda|me ajuda|pode (?:me )?ajudar|(?:faz|fa[cç]a|finaliza|finalize)(?:r)? (?:o pedido )?(?:pra mim|para mim|por mim|voc[eê])|pode fazer (?:o )?pedido)/i;
-  const shoppingHelp=helpPattern.test(text)||history.some(m=>m.role==='user'&&helpPattern.test(m.content));
+  const shoppingHelp=activeCustom||helpPattern.test(text)||history.some(m=>m.role==='user'&&helpPattern.test(m.content));
   const catalogReply='Veja nosso catálogo e escolha seus doces 💕\n'+domain+'/catalogo\n\nSe não conseguir comprar, eu te ajudo por aqui.';
   const customLinkReply='Faça sua encomenda por aqui 💕\n'+domain+'/encomendas\n\nSe não conseguir, eu te ajudo por aqui.';
   if(isWhatsAppGreeting(text)){
@@ -321,6 +322,20 @@ async function processIncomingWhatsAppCore({
     const reply='Oi, '+(contact.name?.split(' ')[0]||'que bom te ver')+'! 💕 '+(businessStatus(config).open?'Como posso ajudar?':'Qual encomenda você gostaria de fazer?');
     await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'greeting'};
   }
+  if(draft&&!draft.budget_id){
+    const saved=JSON.parse(draft.draft),patch:Record<string,unknown>={};
+    const recentUserText=[...history.filter(m=>m.role==='user').map(m=>m.content),text].join('\n');
+    const sizes=[...recentUserText.matchAll(/\b(12|20|30)\s*fatias\b/gi)];
+    if(saved.cake&&saved.slices==null&&sizes.length)patch.slices=Number(sizes.at(-1)![1]);
+    const previous=[...history].reverse().find(m=>m.role==='assistant')?.content||'';
+    const decline=/^(?:n[aã]o(?: (?:tenho|tem|tenho foto|tem foto|quero))?|sem foto|n[aã]o tenho (?:nenhuma )?foto)[.!\s]*$/i.test(text.trim());
+    const noExtras=/^(?:n[aã]o|nada|n[aã]o,? (?:obrigad[ao]|s[oó] isso)|s[oó] isso|pode seguir|pode enviar|pode finalizar|pronto|tudo certo)[.!\s]*$/i.test(text.trim());
+    if(/foto.*refer[eê]ncia|refer[eê]ncia.*foto/i.test(previous)&&decline)patch.referenceDeclined=true;
+    if(/quer acrescentar|deseja acrescentar|algum complemento|seguimos assim/i.test(previous)&&noExtras)patch.extrasConfirmed=true;
+    if(/quer acrescentar|deseja acrescentar|algum complemento|seguimos assim/i.test(previous)&&/^(sim|quero|quero sim)[.!\s]*$/i.test(text.trim())){const reply='O que você quer acrescentar?';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'budget_extra_question'}}
+    if(text.startsWith('Enviei uma foto de referência.')){const review=await saveWhatsAppDraft(cleanPhone,patch);draft=await getWhatsAppDraft(cleanPhone);if(review){const reply='Recebi a foto!\n\n'+review;await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'budget_photo_received'}}}
+    if(Object.keys(patch).length){const review=await saveWhatsAppDraft(cleanPhone,patch);draft=await getWhatsAppDraft(cleanPhone);if(review){await saveConversationHistory(cleanPhone,history,text,review);return {reply:review,action:'budget_final_details'}}}
+  }
   const dateText=text.startsWith('Enviei uma foto de referência.')?(text.split('\nMinha legenda: ')[1]||''):text;
   const resolvedDate=resolveWhatsAppDate(dateText,config.timezone,draft&&!draft.budget_id?JSON.parse(draft.draft).date:undefined);
   if(resolvedDate&&draft&&!draft.budget_id){
@@ -334,7 +349,7 @@ async function processIncomingWhatsAppCore({
     await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'budget_draft_canceled'};
   }
   const previousReply=[...history].reverse().find(message=>message.role==='assistant')?.content||'';
-  const mayConfirm=!contact.justRegistered&&(!draft?.budget_id||/Posso registrar|solicitação #E-|já está registrada/.test(previousReply));
+  const mayConfirm=!contact.justRegistered&&(!draft?.budget_id||/Posso (?:registrar|enviar)|(?:solicitação|encomenda) #E-|já (?:está registrada|foi enviada)/.test(previousReply));
   if(location){const active=await getWhatsAppSale(cleanPhone);const assisted=active&&JSON.parse(active.data).assisted;const reply=assisted?await saveWhatsAppSale(cleanPhone,{},domain,location,true):'Você pode conferir a entrega ao comprar pelo site:\n'+domain+'/catalogo';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'sale_location'}}
   const saleCandidate=await getWhatsAppSale(cleanPhone);
   const customIntent=/\bencomend(?:ar|a|as)\b/i.test(text);
@@ -406,10 +421,24 @@ async function processIncomingWhatsAppCore({
       if(offer){await saveConversationHistory(cleanPhone,history,text,offer.reply);return offer}
       reply='Essa opção não está disponível agora. Posso te ajudar a escolher outra do nosso catálogo? 💕';
     }
+    if(shoppingHelp&&customIntent&&!answer.draft)answer.draft={};
+    if(answer.draft){
+      const sizes=[...dateText.matchAll(/\b(12|20|30)\s*fatias\b/gi)];
+      if(sizes.length){answer.draft.slices=Number(sizes.at(-1)![1]);answer.draft.cake=true}
+      const filling=!dateText.includes('?')?dateText.match(/recheio\s*(?:de\s+|:\s*)?([^,;.\n]{1,120})/i)?.[1]?.trim():undefined;
+      if(filling){
+        if(answer.draft.cakeFlavor==null)answer.draft.cakeFlavor=filling;
+        const details=answer.draft.description||(draft&&!draft.budget_id?JSON.parse(draft.draft).description:'')||'';
+        if(!details.toLowerCase().includes(filling.toLowerCase()))answer.draft.description=(details+'; Recheio: '+filling).slice(0,2000);
+      }
+      if(answer.draft.delivery==null&&!dateText.includes('?')&&/\b(?:retirar|retiro|retirada na loja)\b/i.test(dateText))answer.draft.delivery='pickup';
+      if(!answer.draft.description&&/\b(?:tema|decora[cç][aã]o)\b/i.test(dateText))answer.draft.description=dateText.slice(0,2000);
+    }
     if(resolvedDate?.date&&!resolvedDate.past&&!resolvedDate.invalid&&(answer.draft||draft&&!draft.budget_id))answer.draft={...answer.draft,date:resolvedDate.date};
     if(!shoppingHelp&&answer.draft){await saveConversationHistory(cleanPhone,history,text,customLinkReply);return {reply:customLinkReply,action:'custom_order_link'}}
+    if(answer.draft&&/O que voc[eê] quer acrescentar/i.test(previousReply)&&!text.includes('?'))answer.draft.extrasConfirmed=true;
     if(answer.draft&&contact.name&&!answer.draft.name)answer.draft.name=contact.name;
-    if(answer.draft){await db().prepare('UPDATE whatsapp_sale_drafts SET awaiting_confirmation=0 WHERE phone=? AND order_id IS NULL').bind(cleanPhone).run();const review=await saveWhatsAppDraft(cleanPhone,answer.draft);if(review)reply=review;else if(resolvedDate||/data e hor[aá]rio/i.test(reply)){const next=await nextWhatsAppBudgetQuestion(cleanPhone);if(next)reply=next;}}
+    if(answer.draft){await db().prepare('UPDATE whatsapp_sale_drafts SET awaiting_confirmation=0 WHERE phone=? AND order_id IS NULL').bind(cleanPhone).run();const review=await saveWhatsAppDraft(cleanPhone,answer.draft);if(review)reply=review;else if(resolvedDate||/data e hor[aá]rio|quer acrescentar|rascunho pronto|resumo final/i.test(reply)){const next=await nextWhatsAppBudgetQuestion(cleanPhone);if(next)reply=next;}}
     else if(draft&&!draft.budget_id)await db().prepare('UPDATE whatsapp_budget_drafts SET awaiting_confirmation=0 WHERE phone=?').bind(cleanPhone).run();
 
     if(!assistedCheckout&&!answer.draft&&!answer.sale&&!answer.productId&&reply.includes('?'))reply=catalogReply;
@@ -451,6 +480,7 @@ export async function notifyAdminsHumanRequest(customerPhone: string, customerNa
 }
 
 export function conciseWhatsAppReply(reply:string){
+ reply=reply.replace(/\\r\\n|\\n/g,'\n');
  reply=reply.replace(/\s*[\[(]ID:[^\])]+[\])]/gi,'').replace(/\b(?:vou|vamos) (?:preparar|reservar|separar)(?: para retirada)?[.!]?/gi,'Vamos conferir sua escolha.');
  let links=0;return reply.replace(/https?:\/\/[^\s]+/g,url=>url.includes('/encomendas')||++links>1?'':url).replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
 }

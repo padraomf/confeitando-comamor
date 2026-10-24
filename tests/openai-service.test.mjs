@@ -38,7 +38,7 @@ test('reference photos are private, described visually and attached to the confi
  await ai.receiveWhatsAppMedia(mediaRequest(phone,'image','fixture-photo','image/png',bytes));
  const refs=await ai.pendingReferences(phone);assert.equal(refs.length,1);assert.equal((await ai.pendingReferences('5511900000033')).length,0);assert.equal(mediaObjects.size,1);
  const draft={...fullDraft,name:'Teste Foto',referenceDeclined:false};assert.match(await ai.saveWhatsAppDraft(phone,draft),/Fotos de referência: 1/);
- const reply=await ai.confirmWhatsAppBudget(phone,'sim');assert.match(reply,/Registrei/);const row=sql.prepare('SELECT * FROM budgets WHERE user_id=?').get('whatsapp:'+phone);
+ const reply=await ai.confirmWhatsAppBudget(phone,'sim');assert.match(reply,/encomenda/);const row=sql.prepare('SELECT * FROM budgets WHERE user_id=?').get('whatsapp:'+phone);
  assert.deepEqual(JSON.parse(row.data).photos,[refs[0].id]);assert.equal(sql.prepare('SELECT budget_id FROM budget_attachments WHERE id=?').get(refs[0].id).budget_id,row.id);assert.equal((await ai.pendingReferences(phone)).length,0);
  const link=new URL(await ai.budgetCustomerLink(row.id));assert.equal((await ai.linkedBudget(row.id,link.searchParams.get('access'))).id,row.id);
  await assert.rejects(ai.linkedBudget(crypto.randomUUID(),link.searchParams.get('access')),e=>e.status===404);await assert.rejects(ai.linkedBudget(row.id,'f'.repeat(64)),e=>e.status===404);
@@ -47,7 +47,7 @@ test('reference photos are private, described visually and attached to the confi
 });
 
 test('a complete request asks for a reference before allowing confirmation, and accepts an explicit refusal',async()=>{
- const phone='5511900000044';assert.match(await ai.saveWhatsAppDraft(phone,{...fullDraft,referenceDeclined:false}),/foto de referência/);assert.equal(await ai.confirmWhatsAppBudget(phone,'sim'),null);assert.match(await ai.saveWhatsAppDraft(phone,{referenceDeclined:true}),/Posso registrar/);
+ const phone='5511900000044';assert.match(await ai.saveWhatsAppDraft(phone,{...fullDraft,referenceDeclined:false}),/foto de referência/);assert.equal(await ai.confirmWhatsAppBudget(phone,'sim'),null);assert.match(await ai.saveWhatsAppDraft(phone,{referenceDeclined:true}),/Posso enviar/);
 });
 test.after(async()=>{globalThis.fetch=fetchOriginal;sql.close();delete globalThis.__aiEnv;await rm(dir,{recursive:true,force:true})});
 test('OpenAI uses compatible parameters and does not store conversations',async()=>{
@@ -83,7 +83,7 @@ test('answers contain at most one buying link and never the custom-order form',(
  assert.equal((reply.match(/https:\/\//g)||[]).length,1);assert.doesNotMatch(reply,/encomendas/);
 });
 const draftPhone='5511777777777';
-const fullDraft={referenceDeclined:true,name:'Cliente Teste',date:'2099-12-20T15:00',cake:true,slices:20,sweets:false,cakeFlavor:'Chocolate',description:'Tema jardim com flores coloridas',delivery:'pickup'};
+const fullDraft={extrasConfirmed:true,referenceDeclined:true,name:'Cliente Teste',date:'2099-12-20T15:00',cake:true,slices:20,sweets:false,cakeFlavor:'Chocolate',description:'Tema jardim com flores coloridas',delivery:'pickup'};
 test('a partial custom order does not create a request or ask for confirmation',async()=>{
  assert.equal(await ai.saveWhatsAppDraft(draftPhone,{cake:true,date:'2099-12-20T15:00'}),null);
  assert.equal((await ai.getWhatsAppDraft(draftPhone)).awaiting_confirmation,0);
@@ -92,15 +92,15 @@ test('a partial custom order does not create a request or ask for confirmation',
 });
 test('complete details produce a deterministic summary before saving',async()=>{
  const summary=await ai.saveWhatsAppDraft(draftPhone,fullDraft);
- assert.match(summary,/20 fatias/);assert.match(summary,/20\/12\/2099 às 15:00/);assert.match(summary,/Posso registrar/);
+ assert.match(summary,/20 fatias/);assert.match(summary,/20\/12\/2099 às 15:00/);assert.match(summary,/Posso enviar/);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,0);
  assert.equal(await ai.confirmWhatsAppBudget(draftPhone,'sim, mas quero mudar o sabor'),null);
 });
 test('explicit confirmation registers one request and retry cannot duplicate it',async()=>{
- const reply=await ai.confirmWhatsAppBudget(draftPhone,'Sim!');assert.match(reply,/Registrei sua solicitação #E-/);
+ const reply=await ai.confirmWhatsAppBudget(draftPhone,'Sim!');assert.match(reply,/Sua encomenda #E-/);
  const row=sql.prepare('SELECT * FROM budgets WHERE user_id=?').get('whatsapp:'+draftPhone);assert.equal(row.status,'Recebido');assert.equal(JSON.parse(row.data).phone,'11777777777');assert.equal(JSON.parse(row.data).source,'whatsapp');
  assert.ok(reply.includes('/encomenda/'));assert.equal(JSON.parse(row.data).offer,undefined);
- const retry=await ai.confirmWhatsAppBudget(draftPhone,'confirmo');assert.match(retry,/já está registrada/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,1);
+ const retry=await ai.confirmWhatsAppBudget(draftPhone,'confirmo');assert.match(retry,/já foi enviada/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,1);
 });
 test('past dates, missing flavors and missing delivery addresses cannot be finalized',async()=>{
  assert.equal(await ai.saveWhatsAppDraft('5511666666666',{...fullDraft,date:'2020-01-01T12:00'}),null);
@@ -113,8 +113,8 @@ test('conversation extracts details and returns the summary without leaking JSON
  sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Teste',phone:'11333333333'}),Date.now());
  globalThis.fetch=async(url,opts)=>{const body=JSON.parse(opts.body);assert.equal(body.response_format.type,'json_object');assert.match(body.messages[0].content,/no máximo UM link/);return Response.json({choices:[{message:{content:JSON.stringify({reply:'Vamos conferir?',draft:fullDraft})}}]})};
  const result=await ai.processIncomingWhatsApp({phone,text:'Não consegui encomendar pelo site. Quero um bolo de chocolate de 20 fatias para a festa.',isFromMe:false,domain:'https://local.test'});
- assert.match(result.reply,/Posso registrar/);assert.doesNotMatch(result.reply,/"draft"/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,1);
- const confirmed=await ai.processIncomingWhatsApp({phone,text:'Pode registrar',isFromMe:false,domain:'https://local.test'});assert.match(confirmed.reply,/Registrei sua solicitação/);
+ assert.match(result.reply,/Posso enviar/);assert.doesNotMatch(result.reply,/"draft"/);assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,1);
+ const confirmed=await ai.processIncomingWhatsApp({phone,text:'Pode registrar',isFromMe:false,domain:'https://local.test'});assert.match(confirmed.reply,/Sua encomenda/);
  assert.equal(sql.prepare('SELECT COUNT(*) n FROM budgets').get().n,2);
 });
 
@@ -248,4 +248,23 @@ test('product links come first and assisted checkout starts only after a custome
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Vamos concluir seu pedido.',draft:null,sale:{items:[{id:'sale-slice',quantity:1}],delivery:'pickup',payment:null}})}}]});
  const first=await ai.processIncomingWhatsApp({...input,text:'quero uma fatia brigadeiro'});assert.equal(first.action,'catalog_link');assert.match(first.reply,/\/produto\//);assert.equal(await ai.getWhatsAppSale(phone),null);
  const helped=await ai.processIncomingWhatsApp({...input,text:'não consegui comprar pelo link, faz o pedido pra mim'});assert.equal(helped.action,'sale_draft');assert.match(helped.reply,/Como deseja pagar/);assert.equal(JSON.parse((await ai.getWhatsAppSale(phone)).data).assisted,true);
+});
+
+test('the photo refusal flows to one optional question and then the confirmation summary',async()=>{
+ const phone='5511900000055',userId='whatsapp:'+phone;
+ sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run(userId,JSON.stringify({name:'Cliente Foto',phone:phone.slice(2)}),Date.now());
+ const {slices,sweets,...base}=fullDraft;
+ const initial={...base,quantity:1,referenceDeclined:false,extrasConfirmed:false};
+ sql.prepare('INSERT INTO whatsapp_budget_drafts(phone,request_id,draft,awaiting_confirmation,budget_id,updated_at) VALUES(?,?,?,0,NULL,?)').run(phone,crypto.randomUUID(),JSON.stringify(initial),Date.now());
+ sql.prepare('INSERT INTO whatsapp_chats(phone,history,handover_until,updated_at) VALUES(?,?,0,?)').run(phone,JSON.stringify([{role:'user',content:'30 fatias'},{role:'assistant',content:'Manda uma foto de referência, se tiver.'}]),Date.now());
+ globalThis.fetch=async()=>{throw Error('These final steps should not need the model')};
+ const input={phone,isFromMe:false,domain:'https://local.test'};
+ const first=await ai.processIncomingWhatsApp({...input,text:'Não tem foto'});assert.equal(first.reply,'Quer acrescentar mais alguma coisa?');assert.equal((await ai.getWhatsAppDraft(phone)).awaiting_confirmation,0);
+ const second=await ai.processIncomingWhatsApp({...input,text:'Não'});assert.match(second.reply,/30 fatias/);assert.match(second.reply,/Posso enviar/);assert.doesNotMatch(second.reply,/\/encomendas|complemento|frase no bolo/);assert.equal((await ai.getWhatsAppDraft(phone)).awaiting_confirmation,1);
+ const third=await ai.processIncomingWhatsApp({...input,text:'Pode enviar'});assert.match(third.reply,/Sua encomenda.*foi enviada/);assert.match(third.reply,/analisar e te passar o valor/);
+ const row=sql.prepare('SELECT data FROM budgets WHERE user_id=?').get(userId);assert.equal(JSON.parse(row.data).slices,30);assert.equal(JSON.parse(row.data).sweets,false);
+});
+
+test('WhatsApp messages turn escaped newlines into real paragraph breaks',()=>{
+ assert.equal(ai.conciseWhatsAppReply(String.raw`Oi!\n\nTudo bem?`),'Oi!\n\nTudo bem?');
 });
