@@ -79,3 +79,16 @@ test('unknown recipient is a failed send, without sending',async()=>{const f=fix
 test('network loss while acknowledging keeps the successful local record',async()=>{const f=fixture();try{await assert.rejects(deliver(job,{client:f.client,journal:f.ledger,report:async()=>{throw Error('offline')},ready:()=>true}));await deliver({...job,resumed:true},{client:f.client,journal:f.ledger,report:f.report,ready:()=>true});assert.equal(f.sends,1);assert.equal(f.reports[0].status,'sent')}finally{f.close()}});
 test('disconnected client never sends',async()=>{const f=fixture();try{await deliver(job,{client:f.client,journal:f.ledger,report:f.report,ready:()=>false});assert.equal(f.sends,0)}finally{f.close()}});
 test('QR, authenticated, ready and logout follow actual Client events',async()=>{let logouts=0,destroys=0;const client=new EventEmitter();client.initialize=async()=>{};client.logout=async()=>{logouts++};client.destroy=async()=>{destroys++};client.info={wid:{user:'5511999999999'}};const manager=new Connection(()=>client);await manager.command('connected',1);client.emit('qr','fixture-qr');assert.equal(manager.snapshot().qr,'fixture-qr');assert.equal(manager.isReady(),false);client.emit('authenticated');assert.equal(manager.snapshot().qr,'');client.emit('ready');assert.equal(manager.isReady(),true);assert.equal(manager.snapshot().phone,'5511999999999');await manager.command('disconnected',2);await manager.stopping;assert.equal(manager.isReady(),false);assert.equal(logouts,1);assert.ok(destroys>=1)});
+
+test('long replies preserve complete payment links and send typing before each part',async()=>{
+ const {messageParts,sendConversationalReply}=await import('./response-presentation.mjs');
+ const link='https://local.test/encomenda/fixture?access='+'a'.repeat(64),text='Oi, Ana! 💕\n\n'+('Uma explicação sobre sua encomenda. '.repeat(15))+'\n\nTotal: R$ 150,00\n'+link;
+ const parts=messageParts(text);assert.ok(parts.length>1);assert.ok(parts.some(part=>part.includes(link)));assert.equal(parts.join(' ').replace(/\s+/g,' ').trim(),text.replace(/\s+/g,' ').trim());
+ const events=[],chat={sendStateTyping:async()=>events.push('typing'),clearState:async()=>events.push('clear')};
+ await sendConversationalReply({getChatById:async()=>chat,sendMessage:async(to,value)=>events.push(value)},'fixture',text,{sleep:async()=>events.push('delay')});
+ assert.deepEqual(events,parts.flatMap(part=>['typing','delay',part,'clear']));
+});
+test('typing failures do not block delivery and disconnect cancels remaining parts',async()=>{
+ const {sendConversationalReply}=await import('./response-presentation.mjs');let ready=true;const sent=[];
+ await sendConversationalReply({getChatById:async()=>({sendStateTyping:async()=>{throw Error('unavailable')},clearState:async()=>{}}),sendMessage:async(to,value)=>{sent.push(value);ready=false}},'fixture','a '.repeat(300),{sleep:async()=>{},allowed:()=>ready});assert.equal(sent.length,1);
+});

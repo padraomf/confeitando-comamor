@@ -204,12 +204,12 @@ test('delivery uses the same route quote and exact confirmed location as website
 test('a closed store announces custom orders in the first greeting, without repeating on every message',async()=>{
  await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'closed',budgetWhenClosed:true}));await ai.saveSecrets({openaiEnabled:'1'});
  const phone='5511911111122',input={phone,isFromMe:false,domain:'https://local.test'};
- const first=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(first.reply.startsWith('*Loja fechada no momento.*'));assert.match(first.reply,/apenas encomendas/);assert.ok(first.reply.includes('/encomendas'));assert.ok(!first.reply.includes('/catalogo'));assert.doesNotMatch(first.reply,/\?/);
+ const first=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(first.reply.startsWith('Oi'));assert.doesNotMatch(first.reply,/Loja fechada no momento/);assert.equal((first.reply.match(/fechad[oa]/gi)||[]).length,1);assert.ok(first.reply.includes('/encomendas'));assert.ok(!first.reply.includes('/catalogo'));assert.doesNotMatch(first.reply,/\?/);
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Como posso chamar você?',draft:null,customerName:'Ana Teste'})}}]});
  await ai.processIncomingWhatsApp({...input,text:'Não consegui encomendar, me ajuda'});
  const second=await ai.processIncomingWhatsApp({...input,text:'Ana Teste'});assert.doesNotMatch(second.reply,/Loja fechada no momento/);assert.match(second.reply,/Posso usar este número/);
  sql.prepare('UPDATE whatsapp_chats SET updated_at=? WHERE phone=?').run(Date.now()-5*3600000,phone);
- const nextVisit=await ai.processIncomingWhatsApp({...input,text:'Olá de novo'});assert.ok(nextVisit.reply.startsWith('*Loja fechada no momento.*'));
+ const nextVisit=await ai.processIncomingWhatsApp({...input,text:'Olá'});assert.ok(nextVisit.reply.startsWith('Oi'));assert.doesNotMatch(nextVisit.reply,/Loja fechada no momento/);
  const human=await ai.processIncomingWhatsApp({...input,text:'Resposta da loja',isFromMe:true});assert.equal(human.reply,null);
 });
 

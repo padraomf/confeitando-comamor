@@ -1,3 +1,4 @@
+import {sendConversationalReply} from './response-presentation.mjs';
 // WhatsApp Web may expose the serialized ID as $1; wwebjs 1.34.7 still reads _serialized.
 export function normalizeMessageId(msg){
  const id=msg?.id;if(!id||typeof id!=='object')return null;
@@ -46,7 +47,7 @@ export function trackAutomaticMessages(client){
 }
 
 export function createIncomingHandlers({request,getConnection,waitForMessagesMs=1200}){
- const seen=new Map(),queues=new Map(),trackers=new WeakMap(),pendingTexts=new Map();
+ const seen=new Map(),queues=new Map(),trackers=new WeakMap(),pendingTexts=new Map(),humanPaused=new Map();
  function automatic(client){if(!trackers.has(client))trackers.set(client,trackAutomaticMessages(client));return trackers.get(client)}
  async function contactPhone(msg,chat){
   if(!/@(?:c\.us|lid)$/.test(chat))return null;
@@ -112,7 +113,7 @@ export function createIncomingHandlers({request,getConnection,waitForMessagesMs=
     }
    }
    const res=await request('incoming',{phone:person.phone,text:text.slice(0,6000),senderName:person.name,isFromMe:false,...location?{location}:{}});
-   if(res?.reply&&connection.isReady())await connection.client.sendMessage(msg.from,res.reply,{sendSeen:false});
+   if(res?.reply&&connection.isReady())await sendConversationalReply(connection.client,msg.from,res.reply,{allowed:()=>connection.isReady()&&!(humanPaused.get(person.phone)>Date.now())});
   });
   if(batch)batch.done=task;
   queues.set(person.phone,task);
@@ -123,6 +124,7 @@ export function createIncomingHandlers({request,getConnection,waitForMessagesMs=
   const connection=getConnection();if(!connection.client)return;
   if(automatic(connection.client)(msg))return;
   const person=await contactPhone(msg,msg.to||'');if(!person)return;
+  humanPaused.set(person.phone,Date.now()+30*60000);
   try{await request('incoming',{phone:person.phone,text:(msg.body||'').slice(0,2000),senderName:'Loja',isFromMe:true})}catch{console.error('Não foi possível registrar atendimento humano.')}
  }
  return {incoming,created,prepareClient:automatic};

@@ -88,7 +88,7 @@ export async function buildSiteKnowledge(origin: string) {
     : 'Seg a Sáb: 09:00 às 18:00';
 
   return `VOCÊ É O ASSISTENTE VIRTUAL DA CONFEITARIA "${store.name || 'Confeitando com Amor'}".
-FORMATO DAS MENSAGENS: fale de forma popular, fácil de entender, sem termos de sistema como rascunho, complementar, UF ou solicitação. Use pedido, acrescentar, estado e enviar. Não repita o resumo depois de cada resposta. Use português simples e pouco texto: em respostas comuns, até 2 frases curtas (tente até 250 caracteres), uma pergunta por etapa e uma linha em branco entre ideias. Evite apresentações longas, justificativas e repetir o que o cliente acabou de dizer. Em resumos, liste apenas os itens e dados essenciais; mantenha valores e links completos. Em apresentação de produto/resumo, destaque nome, total e pagamento com *negrito do WhatsApp*. Não escreva blocos longos, IDs técnicos, listas de perguntas ou repita o mesmo dado. Para uma pergunta simples, uma ou duas frases bastam. Use emojis com moderação.
+FORMATO DAS MENSAGENS: fale de forma popular, fácil de entender, sem termos de sistema como rascunho, complementar, UF ou solicitação. Use pedido, acrescentar, estado e enviar. Não repita o resumo depois de cada resposta. Use português simples e pouco texto: em respostas comuns, até 2 frases curtas (tente até 250 caracteres), uma pergunta por etapa e uma linha em branco entre ideias. Evite apresentações longas, justificativas e repetir o que o cliente acabou de dizer. Em resumos, liste apenas os itens e dados essenciais; mantenha valores e links completos. Em apresentação de produto/resumo, destaque nome, total e pagamento com *negrito do WhatsApp*. Não escreva blocos longos, IDs técnicos, listas de perguntas ou repita o mesmo dado. Para uma pergunta simples, uma ou duas frases bastam. Use emojis com moderação. Converse de forma dinâmica e prestativa: responda diretamente ao que a pessoa pediu, aproveite o que ela já contou e indique o próximo passo sem repetir perguntas. Acolha dificuldades com uma solução concreta. Evite respostas mecânicas como "Perfeito, anotado" a cada mensagem. Se houver mais de uma ideia necessária, separe por parágrafos curtos, pois cada trecho será enviado como mensagem de WhatsApp. Não acrescente texto só para dividir em mensagens.
 Seu objetivo é atender clientes no WhatsApp de forma calorosa, ágil, educada e precisa, entendendo primeiro o que cada pessoa deseja e ajudando a resolver seu pedido.
 
 ---
@@ -207,6 +207,7 @@ export async function processIncomingWhatsApp(input:Parameters<typeof processInc
  const customOrder=phone?await getWhatsAppDraft(phone):null;
  const result=await processIncomingWhatsAppCore(input);
  if(!result.reply||input.isFromMe||businessStatus(await settings()).open)return result;
+ if(/(?:cat[aá]logo|loja) (?:est[aá] |est[aã]o )?fechad[oa]/i.test(result.reply))return result;
  // Closing hours restrict the catalog, not the submission of custom orders.
  if(result.action==='budget_confirmation'||customOrder&&!customOrder.budget_id&&!isWhatsAppGreeting(input.text))return result;
  let noticed=false;try{noticed=!!before&&before.updated_at>Date.now()-4*3600000&&JSON.parse(before.history).some((m:ChatMessage)=>m.role==='assistant'&&m.content.includes(closedNotice))}catch{}
