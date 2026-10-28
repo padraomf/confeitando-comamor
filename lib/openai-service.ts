@@ -211,7 +211,7 @@ export async function processIncomingWhatsApp(input:Parameters<typeof processInc
  if(/(?:cat[aá]logo|loja) (?:est[aá] |est[aã]o )?fechad[oa]/i.test(result.reply))return result;
  // Closing hours restrict the catalog, not the submission of custom orders.
  if(result.action==='budget_confirmation'||customOrder&&!customOrder.budget_id&&!isWhatsAppGreeting(input.text))return result;
- let noticed=false;try{noticed=!!before&&before.updated_at>Date.now()-4*3600000&&JSON.parse(before.history).some((m:ChatMessage)=>m.role==='assistant'&&m.content.includes(closedNotice))}catch{}
+ let noticed=false;try{noticed=!!before&&before.updated_at>Date.now()-4*3600000&&JSON.parse(before.history).some((m:ChatMessage)=>m.role==='assistant'&&(m.content.includes(closedNotice)||/(?:cat[aá]logo|loja) (?:est[aá] )?fechad[oa]/i.test(m.content)))}catch{}
  if(noticed&&!(isWhatsAppGreeting(input.text)&&before&&before.updated_at<Date.now()-30*60000))return result;
  const reply=closedNotice+'\n\n'+result.reply;
  const current=await db().prepare('SELECT history FROM whatsapp_chats WHERE phone=?').bind(phone).first<{history:string}>();
