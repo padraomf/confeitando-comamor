@@ -1,9 +1,9 @@
-export function messageParts(text,limit=280){
+export function messageParts(text,limit=180){
  const value=String(text).trim();if(!value)return [];
- if(value.length<=limit)return [value];
+ if(/^(?:\*Confere sua encomenda\*|\*Resumo do seu pedido\*|Escolhe até 2 recheios:)/.test(value))return [value];
  const parts=[];let part='';
  const flush=()=>{if(part)parts.push(part);part=''};
- for(const paragraph of value.split(/\n\s*\n/)){
+ for(const paragraph of value.split(/\n+|(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚ0-9])/u)){
   if(paragraph.length<=limit){flush();part=paragraph;continue}
   flush();
   for(const line of paragraph.split('\n')){

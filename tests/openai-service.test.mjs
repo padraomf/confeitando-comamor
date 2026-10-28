@@ -120,7 +120,7 @@ test('conversation extracts details and returns the summary without leaking JSON
 
 test('a new contact receives the catalog without questions or mandatory registration',async()=>{
  await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open'}));
- const result=await ai.processIncomingWhatsApp({phone:'5511222222222',text:'Oi! Quero um bolo.',senderName:'Nome de exibição',isFromMe:false,domain:'https://local.test'});
+ const result=await ai.processIncomingWhatsApp({phone:'5511222222222',text:'Oi!',senderName:'Nome de exibição',isFromMe:false,domain:'https://local.test'});
  assert.ok(result.reply.includes('/catalogo'));assert.doesNotMatch(result.reply,/\?/);
  assert.equal(await ai.findWhatsAppCustomer('5511222222222'),null);
 });
@@ -318,4 +318,17 @@ test('cake orders ask dough before fillings, preserve both, and reject more than
  assert.equal(ai.conversationAnswer.safeParse({reply:'ok',draft:{cakeFillings:['Brigadeiro','Beijinho','Creme moça']}}).success,false);
  assert.equal(ai.conversationAnswer.safeParse({reply:'ok',draft:{cakeFillings:['Brigadeiro','Brigadeiro']}}).success,false);
  await ai.confirmWhatsAppBudget(phone,'sim');const data=JSON.parse(sql.prepare('SELECT data FROM budgets WHERE user_id=?').get('whatsapp:'+phone).data);assert.equal(data.cakeDough,'Branca tradicional');assert.deepEqual(data.cakeFillings,['Brigadeiro com amendoim','Leite ninho']);
+});
+
+test('me ajude continues the cake request instead of repeating the offered form link',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open',budgetWhenClosed:true,pickup:true}));
+ const phone='5511900000111';sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Ajuda',phone:phone.slice(2)}),Date.now());
+ sql.prepare('INSERT INTO whatsapp_chats(phone,history,handover_until,updated_at) VALUES(?,?,0,?)').run(phone,JSON.stringify([{role:'user',content:'quero um bolo pra domingo'},{role:'assistant',content:'Faça sua encomenda por aqui https://local.test/encomendas. Se não conseguir eu te ajudo.'}]),Date.now());
+ globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Vamos fazer seu bolo por aqui. Qual o horário?',draft:{cake:true,date:'2099-12-20'}})}}]});
+ const result=await ai.processIncomingWhatsApp({phone,text:'me ajude',isFromMe:false,domain:'https://local.test'});assert.doesNotMatch(result.reply,/\/encomendas|Faça sua encomenda/);assert.match(result.reply,/horário/);assert.equal(JSON.parse((await ai.getWhatsAppDraft(phone)).draft).cake,true);
+});
+test('an uncatalogued guest can ask a question after the form link without registration or a forced link',async()=>{
+ const phone='5511900000112';sql.prepare('INSERT INTO whatsapp_chats(phone,history,handover_until,updated_at) VALUES(?,?,0,?)').run(phone,JSON.stringify([{role:'assistant',content:'https://local.test/encomendas'}]),Date.now());
+ globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Temos massa branca tradicional e preta de chocolate. Qual você prefere?',draft:null})}}]});
+ const result=await ai.processIncomingWhatsApp({phone,text:'quais massas vocês têm?',isFromMe:false,domain:'https://local.test'});assert.match(result.reply,/massa branca/);assert.doesNotMatch(result.reply,/https:|nome|número/);assert.equal(await ai.findWhatsAppCustomer(phone),null);
 });

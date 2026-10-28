@@ -92,3 +92,10 @@ test('typing failures do not block delivery and disconnect cancels remaining par
  const {sendConversationalReply}=await import('./response-presentation.mjs');let ready=true;const sent=[];
  await sendConversationalReply({getChatById:async()=>({sendStateTyping:async()=>{throw Error('unavailable')},clearState:async()=>{}}),sendMessage:async(to,value)=>{sent.push(value);ready=false}},'fixture','a '.repeat(300),{sleep:async()=>{},allowed:()=>ready});assert.equal(sent.length,1);
 });
+
+test('separates short ideas like Padrao MF but keeps order summaries together',async()=>{
+ const {messageParts}=await import('./response-presentation.mjs');
+ assert.deepEqual(messageParts('Oi, Ana! 💕\n\nFaça sua encomenda por aqui 💕\nhttps://local.test/encomendas\n\nSe não conseguir, eu te ajudo por aqui.'),['Oi, Ana! 💕','Faça sua encomenda por aqui 💕','https://local.test/encomendas','Se não conseguir, eu te ajudo por aqui.']);
+ assert.deepEqual(messageParts('Fazemos sim. Qual recheio você prefere?'),['Fazemos sim.','Qual recheio você prefere?']);
+ const summary='*Confere sua encomenda* 🍰\n'+('Detalhes do pedido. '.repeat(50));assert.deepEqual(messageParts(summary),[summary.trim()]);
+});
