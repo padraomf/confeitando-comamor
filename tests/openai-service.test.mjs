@@ -332,3 +332,20 @@ test('an uncatalogued guest can ask a question after the form link without regis
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Temos massa branca tradicional e preta de chocolate. Qual você prefere?',draft:null})}}]});
  const result=await ai.processIncomingWhatsApp({phone,text:'quais massas vocês têm?',isFromMe:false,domain:'https://local.test'});assert.match(result.reply,/massa branca/);assert.doesNotMatch(result.reply,/https:|nome|número/);assert.equal(await ai.findWhatsAppCustomer(phone),null);
 });
+
+test('programming requests and followups never turn the confectionery bot into a coding assistant',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open',budgetWhenClosed:true,pickup:true}));let calls=0;globalThis.fetch=async()=>{calls++;throw Error('Programming must not reach OpenAI')};
+ const phone='5511900000121',input={phone,isFromMe:false,domain:'https://local.test'};
+ const code='const { userId, valor } = req.body; const user = db.query("SELECT * FROM users"); return res.status(200).json(user);';
+ const first=await ai.processIncomingWhatsApp({...input,text:code});assert.equal(first.action,'out_of_scope');assert.match(first.reply,/Confeitando com Amor/);assert.equal(calls,0);assert.equal(await ai.getWhatsAppDraft(phone),null);assert.equal(await ai.getWhatsAppSale(phone),null);
+ sql.prepare('UPDATE whatsapp_chats SET history=? WHERE phone=?').run(JSON.stringify([{role:'user',content:code},{role:'assistant',content:'Posso ajudar a ajustar o código! Quer que eu corrija?'}]),phone);
+ const second=await ai.processIncomingWhatsApp({...input,text:'sim'});assert.equal(second.action,'out_of_scope');assert.equal(calls,0);assert.doesNotMatch(sql.prepare('SELECT history FROM whatsapp_chats WHERE phone=?').get(phone).history,/req.body|corrij/);
+});
+test('off-topic model classification cannot save a draft or expose a coding answer',async()=>{
+ const phone='5511900000122';globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({scope:'out_of_scope',reply:'Eu posso fazer sua atividade escolar.',draft:{cake:true},sale:null})}}]});
+ const result=await ai.processIncomingWhatsApp({phone,text:'Faça minha atividade escolar sobre oceanos',isFromMe:false,domain:'https://local.test'});assert.equal(result.action,'out_of_scope');assert.match(result.reply,/confeitaria/);assert.equal(await ai.getWhatsAppDraft(phone),null);
+});
+test('store access and Pix codes remain valid customer questions',async()=>{
+ globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({scope:'confectionery',reply:'O código de acesso é enviado pelo WhatsApp. Você pode solicitar outro na página da sua conta.',draft:null})}}]});
+ const result=await ai.processIncomingWhatsApp({phone:'5511900000123',text:'O código de acesso do site não chegou, como faço?',isFromMe:false,domain:'https://local.test'});assert.notEqual(result.action,'out_of_scope');assert.match(result.reply,/código de acesso/);
+});

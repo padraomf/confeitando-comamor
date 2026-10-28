@@ -23,7 +23,7 @@ const draftSchema=z.object({
  description:z.string().max(2000).nullable(),delivery:z.enum(['pickup','delivery']).nullable(),
  address:z.object({cep:z.string().max(9).nullable(),street:z.string().max(150).nullable(),number:z.string().max(20).nullable(),district:z.string().max(100).nullable(),city:z.string().max(100).nullable(),state:z.string().max(2).nullable(),complement:z.string().max(150).nullable()}).partial().nullable()
 }).partial().strict();
-export const conversationAnswer=z.object({reply:z.string().trim().min(1).max(2400),draft:draftSchema.omit({location:true}).nullable(),sale:salePatchSchema.nullable().optional(),productId:z.string().max(150).nullable().optional(),customerName:z.string().trim().min(2).max(100).nullable().optional()}).strict();
+export const conversationAnswer=z.object({reply:z.string().trim().min(1).max(2400),scope:z.enum(['confectionery','out_of_scope']).optional(),draft:draftSchema.omit({location:true}).nullable(),sale:salePatchSchema.nullable().optional(),productId:z.string().max(150).nullable().optional(),customerName:z.string().trim().min(2).max(100).nullable().optional()}).strict();
 type Draft=z.infer<typeof draftSchema>;
 type DraftRow={phone:string;request_id:string;draft:string;awaiting_confirmation:number;budget_id:string|null;updated_at:number};
 export async function getWhatsAppDraft(phone:string){
