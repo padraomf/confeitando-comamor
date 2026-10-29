@@ -248,7 +248,7 @@ test('product links come first and assisted checkout starts only after a custome
  sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Cliente Link',phone:phone.slice(2)}),Date.now());
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({reply:'Vamos concluir seu pedido.',draft:null,sale:{items:[{id:'sale-slice',quantity:1}],delivery:'pickup',payment:null}})}}]});
  const first=await ai.processIncomingWhatsApp({...input,text:'quero uma fatia brigadeiro'});assert.equal(first.action,'catalog_link');assert.match(first.reply,/\/produto\//);assert.equal(await ai.getWhatsAppSale(phone),null);
- const helped=await ai.processIncomingWhatsApp({...input,text:'não consegui comprar pelo link, faz o pedido pra mim'});assert.equal(helped.action,'sale_draft');assert.match(helped.reply,/Como deseja pagar/);assert.equal(JSON.parse((await ai.getWhatsAppSale(phone)).data).assisted,true);
+ const helped=await ai.processIncomingWhatsApp({...input,text:'não consegui comprar pelo link, faz o pedido pra mim'});assert.equal(helped.action,'catalog_assistance');assert.match(helped.reply,/retirar.*entrega/);assert.equal(JSON.parse((await ai.getWhatsAppSale(phone)).data).assisted,true);
 });
 
 test('the photo refusal flows to one optional question and then the confirmation summary',async()=>{
@@ -348,4 +348,16 @@ test('off-topic model classification cannot save a draft or expose a coding answ
 test('store access and Pix codes remain valid customer questions',async()=>{
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:JSON.stringify({scope:'confectionery',reply:'O código de acesso é enviado pelo WhatsApp. Você pode solicitar outro na página da sua conta.',draft:null})}}]});
  const result=await ai.processIncomingWhatsApp({phone:'5511900000123',text:'O código de acesso do site não chegou, como faço?',isFromMe:false,domain:'https://local.test'});assert.notEqual(result.action,'out_of_scope');assert.match(result.reply,/código de acesso/);
+});
+
+test('catalog screenshot supersedes stale cake draft using real product name, never screenshot price',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open',pickup:true}));const phone='5511900000131';await ai.saveWhatsAppDraft(phone,{cake:true,slices:30,date:'2099-12-20T12:00'});
+ const id=crypto.randomUUID();sql.prepare('INSERT INTO whatsapp_media(id,phone,message_id,kind,text,created_at) VALUES(?,?,?,?,?,?)').run(id,phone,'screenshot-catalog','image','Print do catálogo: Fatia Brigadeiro, botão Adicionar, R$ 0,01',Date.now());
+ const result=await ai.processIncomingWhatsApp({phone,text:'Enviei uma foto de referência.\nMinha legenda: quero esse',mediaId:id,isFromMe:false,domain:'https://local.test'});assert.equal(result.action,'catalog_image');assert.match(result.reply,/18,00/);assert.doesNotMatch(result.reply,/recheios|0,01/);assert.equal((await ai.getWhatsAppDraft(phone)).updated_at,0);
+});
+test('newer catalog sale delivery and location do not resume older custom cake',async()=>{
+ await ai.putSetting('store',JSON.stringify({whatsappEnabled:true,whatsappMode:'webjs',hoursMode:'open',pickup:true,cash:true}));const phone='5511900000132';sql.prepare('INSERT INTO profiles(user_id,data,updated_at) VALUES(?,?,?)').run('whatsapp:'+phone,JSON.stringify({name:'Teste Local',phone:phone.slice(2)}),Date.now());await ai.saveWhatsAppDraft(phone,{cake:true,slices:30,date:'2099-12-20T12:00'});
+ await ai.saveWhatsAppSale(phone,{items:[{id:'sale-slice',quantity:1}],delivery:'pickup',payment:'cash'},'https://local.test');
+ let r=await ai.processIncomingWhatsApp({phone,text:'entrega',isFromMe:false,domain:'https://local.test'});assert.equal(r.action,'sale_delivery');assert.match(r.reply,/localização/);
+ r=await ai.processIncomingWhatsApp({phone,text:'Compartilhei minha localização de entrega pelo WhatsApp.',location:{lat:-23.56,lng:-46.64},isFromMe:false,domain:'https://local.test'});assert.equal(r.action,'sale_location');assert.match(r.reply,/CEP|endereço/);assert.deepEqual(JSON.parse((await ai.getWhatsAppSale(phone)).data).location,{lat:-23.56,lng:-46.64});
 });

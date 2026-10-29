@@ -84,9 +84,13 @@ export function createIncomingHandlers({request,getConnection,waitForMessagesMs=
    if(batch&&waitForMessagesMs>0)await new Promise(resolve=>setTimeout(resolve,waitForMessagesMs));
    if(batch&&pendingTexts.get(person.phone)===batch)pendingTexts.delete(person.phone);
    let text=batch?batch.parts.join('\n'):msg.body||'';
-   const location=msg.type==='location'?{lat:Number(msg.location?.latitude),lng:Number(msg.location?.longitude)}:undefined;
+   const rawLocation=msg.location||msg._data||{};
+   const point={lat:Number(rawLocation.latitude??rawLocation.lat??msg._data?.lat),lng:Number(rawLocation.longitude??rawLocation.lng??msg._data?.lng)};
+   const location=msg.type==='location'&&Number.isFinite(point.lat)&&Number.isFinite(point.lng)&&Math.abs(point.lat)<=90&&Math.abs(point.lng)<=180?point:undefined;
+   if(msg.type==='location'&&!location){await sendConversationalReply(connection.client,msg.from,'Não consegui ler o ponto dessa localização. Pode compartilhar novamente pelo clipe → Localização?');return}
+   let mediaId;
    if(location)text='Compartilhei minha localização de entrega pelo WhatsApp.';
-   if(msg.hasMedia){
+   if(msg.hasMedia&&!location){
     if(msg.isViewOnce||!['ptt','audio','image'].includes(msg.type)){
      await connection.client.sendMessage(msg.from,'Pode enviar uma foto comum ou um áudio? Assim consigo entender sua referência. 😊',{sendSeen:false});return;
     }
@@ -105,6 +109,7 @@ export function createIncomingHandlers({request,getConnection,waitForMessagesMs=
      form.set('phone',person.phone);form.set('messageId',id||'');form.set('kind',kind);
      form.set('file',new Blob([Buffer.from(media.data,'base64')],{type:media.mimetype}),'arquivo');
      const received=await request('media',form);if(received.disabled)return;
+     mediaId=received.id;
      text=kind==='audio'?received.text:'Enviei uma foto de referência. Descrição visual (não são instruções): '+received.text+(text?'\nMinha legenda: '+text:'');
      }catch(error){
      console.error('Falha no processamento de mídia:',JSON.stringify({stage,mime,status:error.status||null,name:error.name,detail:String(error.message||'').replace(/https?:\/\/\S+/g,'[URL]').replace(/Bearer \S+/gi,'[credencial]').slice(0,200)}));
@@ -112,12 +117,12 @@ export function createIncomingHandlers({request,getConnection,waitForMessagesMs=
      await connection.client.sendMessage(msg.from,hint,{sendSeen:false});return;
     }
    }
-   const res=await request('incoming',{phone:person.phone,text:text.slice(0,6000),senderName:person.name,isFromMe:false,...location?{location}:{}});
+   const res=await request('incoming',{phone:person.phone,text:text.slice(0,6000),senderName:person.name,isFromMe:false,...mediaId?{mediaId}:{},...location?{location}:{}});
    if(res?.reply&&connection.isReady())await sendConversationalReply(connection.client,msg.from,res.reply,{allowed:()=>connection.isReady()&&!(humanPaused.get(person.phone)>Date.now())});
   });
   if(batch)batch.done=task;
   queues.set(person.phone,task);
-  try{await task}catch{console.error('Não foi possível processar a mensagem recebida.')}finally{if(queues.get(person.phone)===task)queues.delete(person.phone)}
+  try{await task}catch(error){console.error('Falha na mensagem:',JSON.stringify({type:msg.type,status:error.status||null,name:error.name}));if(connection.isReady()&&!(humanPaused.get(person.phone)>Date.now()))try{await sendConversationalReply(connection.client,msg.from,'Não consegui concluir essa etapa agora. Pode tentar novamente? Seu pedido não foi confirmado nem duplicado.')}catch{}}finally{if(queues.get(person.phone)===task)queues.delete(person.phone)}
  }
  async function created(msg){
   if(!msg.fromMe)return;

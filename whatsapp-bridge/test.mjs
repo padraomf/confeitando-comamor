@@ -99,3 +99,14 @@ test('separates short ideas like Padrao MF but keeps order summaries together',a
  assert.deepEqual(messageParts('Fazemos sim. Qual recheio você prefere?'),['Fazemos sim.','Qual recheio você prefere?']);
  const summary='*Confere sua encomenda* 🍰\n'+('Detalhes do pedido. '.repeat(50));assert.deepEqual(messageParts(summary),[summary.trim()]);
 });
+
+test('native location with media thumbnail bypasses image download and reaches server',async()=>{
+ const calls=[],sent=[],client={sendMessage:async(to,text)=>sent.push(text)};
+ const h=createIncomingHandlers({waitForMessagesMs:0,getConnection:()=>({client,isReady:()=>true}),request:async(route,data)=>{calls.push({route,data});return {reply:'Recebi a localização'}}});
+ await h.incoming({from:'5511999999999@c.us',type:'location',hasMedia:true,body:'',id:{_serialized:'loc-media'},location:{latitude:-9.4,longitude:-40.5},downloadMedia:async()=>{throw Error('Must not download location')}});
+ assert.equal(calls.length,1);assert.equal(calls[0].route,'incoming');assert.deepEqual(calls[0].data.location,{lat:-9.4,lng:-40.5});assert.deepEqual(sent,['Recebi a localização']);
+});
+test('failed incoming request produces a recoverable message instead of silence',async()=>{
+ const sent=[],client={sendMessage:async(to,text)=>sent.push(text)};const h=createIncomingHandlers({waitForMessagesMs:0,getConnection:()=>({client,isReady:()=>true}),request:async()=>{const e=Error('bad input');e.status=422;throw e}});
+ await h.incoming({from:'5511999999999@c.us',type:'chat',body:'oi',id:{_serialized:'fail-reply'}});assert.ok(sent.length>=1);assert.match(sent.join(' '),/Não consegui concluir/);
+});

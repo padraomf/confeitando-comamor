@@ -226,6 +226,7 @@ async function processIncomingWhatsAppCore({
   isFromMe,
   domain,
   location,
+  mediaId,
 }: {
   phone: string;
   text: string;
@@ -233,6 +234,7 @@ async function processIncomingWhatsAppCore({
   isFromMe: boolean;
   domain: string;
   location?:{lat:number;lng:number};
+  mediaId?:string;
 }): Promise<{ reply: string | null; action?: string }> {
   await ensureChatsTable();
   const cleanPhone = phone.replace(/\D/g, '');
@@ -318,8 +320,46 @@ async function processIncomingWhatsAppCore({
   if(text.startsWith('Enviei uma foto de referência.'))text='Enviei uma foto de referência.'+(text.includes('\nMinha legenda: ')?'\nMinha legenda: '+text.split('\nMinha legenda: ')[1]:'');
   location=location||whatsAppLocationLink(text);
   let draft=await getWhatsAppDraft(cleanPhone);
-  const activeCustom=!!(draft&&!draft.budget_id&&draft.updated_at>Date.now()-24*3600000);
+  let activeCustom=!!(draft&&!draft.budget_id&&draft.updated_at>Date.now()-24*3600000);
+  const saleAtStart=await getWhatsAppSale(cleanPhone);
+  if(saleAtStart&&!saleAtStart.order_id&&saleAtStart.updated_at>=(draft?.updated_at||0)&&JSON.parse(saleAtStart.data).items?.length)activeCustom=false;
+  if(mediaId){
+    const media=await db().prepare("SELECT text FROM whatsapp_media WHERE id=? AND phone=? AND kind='image'").bind(mediaId,cleanPhone).first<{text:string}>();
+    if(media){
+      const normalize=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+      const visual=normalize(media.text),catalog=await products() as Product[];
+      const matches=catalog.filter(p=>p.active&&!p.demo&&normalize(p.name).length>=5&&visual.includes(normalize(p.name))).sort((a,b)=>b.name.length-a.name.length);
+      const selected=matches[0];
+      if(selected&&(matches.length===1||selected.name.length>matches[1].name.length)){
+        if(draft&&!draft.budget_id){await db().prepare('UPDATE whatsapp_budget_drafts SET awaiting_confirmation=0,updated_at=0 WHERE phone=? AND budget_id IS NULL').bind(cleanPhone).run();draft=null;activeCustom=false}
+        await db().prepare('UPDATE whatsapp_media SET consumed=1 WHERE id=? AND phone=?').bind(mediaId,cleanPhone).run();
+        const reply=businessStatus(config).open?(await catalogProductOffer(selected.id,domain))?.reply:'Esse produto é do catálogo e só pode ser comprado com a loja aberta. Ele não é uma encomenda personalizada.';
+        if(reply){await saveConversationHistory(cleanPhone,history,'[Print de produto do catálogo: '+selected.name+'] '+text,reply);return {reply,action:'catalog_image'}}
+      }
+      const reply='Recebi a foto! Você quer um produto do catálogo ou uma encomenda personalizada?';
+      if(!activeCustom){await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'image_intent_question'}}
+    }
+  }
+  if(activeCustom&&/^(?:uma? )?fatia[.!\s]*$/i.test(text.trim())){
+    await db().prepare('UPDATE whatsapp_budget_drafts SET awaiting_confirmation=0,updated_at=0 WHERE phone=? AND budget_id IS NULL').bind(cleanPhone).run();draft=null;activeCustom=false;
+  }
+  if(!activeCustom)draft=null;
+  if(!activeCustom&&saleAtStart&&!saleAtStart.order_id&&JSON.parse(saleAtStart.data).items?.length&&/^(?:entrega|quero entrega|pra entregar|retirada|vou retirar)[.!\s]*$/i.test(text.trim())){
+    const reply=await saveWhatsAppSale(cleanPhone,{delivery:/retir/i.test(text)?'pickup':'delivery'},domain,undefined,true);
+    await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'sale_delivery'};
+  }
   const helpPattern=/(?:n[aã]o (?:consegui|consigo|estou conseguindo)|n[aã]o (?:abre|funciona)|dificuldade|preciso de ajuda|(?:me )?ajud(?:a|e|ar)(?: por favor)?|minha ajuda|pode (?:me )?ajudar|(?:faz|fa[cç]a|finaliza|finalize)(?:r)? (?:o pedido )?(?:pra mim|para mim|por mim|voc[eê])|pode fazer (?:o )?pedido)/i;
+  if(helpPattern.test(text)){
+    const previousProduct=[...history].reverse().find(m=>m.role==='assistant'&&m.content.includes(domain+'/produto/'));
+    if(previousProduct){
+      const selected=(await products() as Product[]).find(p=>previousProduct.content.includes(domain+productPath(p.id,p.name)));
+      if(selected){
+        await db().prepare('UPDATE whatsapp_budget_drafts SET awaiting_confirmation=0,updated_at=0 WHERE phone=? AND budget_id IS NULL').bind(cleanPhone).run();
+        const reply=await saveWhatsAppSale(cleanPhone,{items:[{id:selected.id,quantity:1}]},domain,undefined,true);
+        await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'catalog_assistance'};
+      }
+    }
+  }
   const shoppingHelp=activeCustom||helpPattern.test(text)||history.some(m=>m.role==='user'&&helpPattern.test(m.content));
   const catalogOpen=businessStatus(config).open;
   const catalogReply=!catalogOpen?'O catálogo está fechado. Fatias, doces e sobremesas só são vendidos com a loja aberta.\n\nPara encomendar bolo ou docinhos para outra data:\n'+domain+'/encomendas':'Veja nosso catálogo e escolha seus doces 💕\n'+domain+'/catalogo\n\nSe não conseguir comprar, eu te ajudo por aqui.';
@@ -381,7 +421,7 @@ async function processIncomingWhatsAppCore({
   const previousReply=[...history].reverse().find(message=>message.role==='assistant')?.content||'';
   const mayConfirm=!contact.justRegistered&&(!draft?.budget_id||/Posso (?:registrar|enviar)|(?:solicitação|encomenda) #E-|já (?:está registrada|foi enviada)/.test(previousReply));
   if(location&&activeCustom){try{const review=await saveWhatsAppDraft(cleanPhone,{delivery:'delivery'},location);const quote=await routeQuote({location:{...location,source:'pin',confirmed:true}});const reply=review||'Taxa de entrega: '+money(quote.fee)+'.\n\nAgora me manda CEP, rua, número, bairro, cidade e estado, como complemento para o entregador.';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'budget_location'}}catch(error:any){const reply=error.status?error.message:'Não consegui calcular a entrega agora. Pode reenviar a localização?';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'budget_location_error'}}}
-  if(location){const active=await getWhatsAppSale(cleanPhone);const assisted=active&&JSON.parse(active.data).assisted;const reply=assisted?await saveWhatsAppSale(cleanPhone,{},domain,location,true):'Você pode conferir a entrega ao comprar pelo site:\n'+domain+'/catalogo';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'sale_location'}}
+  if(location){const active=await getWhatsAppSale(cleanPhone);const assisted=active&&!active.order_id&&(JSON.parse(active.data).assisted||JSON.parse(active.data).items?.length);const reply=assisted?await saveWhatsAppSale(cleanPhone,{},domain,location,true):'Você pode conferir a entrega ao comprar pelo site:\n'+domain+'/catalogo';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'sale_location'}}
   const saleCandidate=await getWhatsAppSale(cleanPhone);
   const customIntent=/\bencomend(?:ar|a|as)\b/i.test(text);
   if(customIntent)await db().prepare('UPDATE whatsapp_sale_drafts SET awaiting_confirmation=0 WHERE phone=? AND order_id IS NULL').bind(cleanPhone).run();
@@ -447,6 +487,7 @@ async function processIncomingWhatsAppCore({
       await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'customer_name'};
     }
     if(answer.sale){
+      if(assistedCheckout)await db().prepare('UPDATE whatsapp_budget_drafts SET awaiting_confirmation=0,updated_at=0 WHERE phone=? AND budget_id IS NULL').bind(cleanPhone).run();
       await db().prepare('UPDATE whatsapp_budget_drafts SET awaiting_confirmation=0 WHERE phone=? AND budget_id IS NULL').bind(cleanPhone).run();
       if(!assistedCheckout){const selected=answer.sale.items?.[0]?.id;const offer=selected?await catalogProductOffer(selected,domain):null;reply=offer?.reply||'Você pode escolher e comprar por aqui:\n'+domain+'/catalogo';await saveConversationHistory(cleanPhone,history,text,reply);return {reply,action:'catalog_link'}}
       try{reply=await saveWhatsAppSale(cleanPhone,answer.sale,domain,undefined,true)}catch(error:any){reply=error.status?error.message:'Não consegui conferir esse pedido agora. Pode tentar novamente em instantes?'}
